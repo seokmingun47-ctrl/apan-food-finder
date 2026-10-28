@@ -202,6 +202,8 @@ input[type=range] { width: 100%; accent-color: var(--ink); }
 .map-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); margin-top: -6px; }
 .map-foot a { color: var(--ink); font-weight: 800; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
 .hours { font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.sep { padding: 10px 14px; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--soft); border-bottom: 1px solid var(--line); }
+.item.below .nm { color: var(--ink-2); }
 .hours .today { color: var(--ink); font-weight: 800; }
 .d-actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--bg); border-top: 1px solid var(--line); padding-block: 12px calc(12px + env(safe-area-inset-bottom, 0px)); padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
 .d-actions-in { max-width: 520px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; }
@@ -211,7 +213,7 @@ dialog::backdrop { background: rgb(0 0 0 / .5); }
 dialog h3 { margin: 0 0 8px; font-size: 20px; font-weight: 800; }
 dialog ol { padding-left: 20px; margin: 8px 0 14px; font-size: 14px; color: var(--ink-2); }
 dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
-@media (prefers-reduced-motion: no-preference) { .item, .feature { animation: up .25s ease both; } .detail { animation: slide .22s ease both; } @keyframes up { from { transform: translateY(6px); opacity: .5; } } @keyframes slide { from { transform: translateY(16px); opacity: .6; } } }
+@media (prefers-reduced-motion: no-preference) { .item, .feature { animation: up .25s ease both; } .detail { animation: slide .22s ease both; } @keyframes up { from { transform: translateY(6px); opacity: .5; } } @keyframes slide { from { opacity: .4; } } }
 </style>
 </head>
 <body>
@@ -349,11 +351,11 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     <div class="map-foot"><span id="dDist"></span><a id="dMapsLink" target="_blank" rel="noopener">구글맵에서 보기 <svg class="i" style="width:14px;height:14px"><use href="#i-ext"/></svg></a></div>
     <div class="hours" id="dHours" hidden></div>
   </div>
-  <div class="d-actions"><div class="d-actions-in">
-    <a class="btn" id="dReviews" target="_blank" rel="noopener"><svg class="i"><use href="#i-msg"/></svg>사진·리뷰</a>
-    <a class="btn solid" id="dGo" target="_blank" rel="noopener"><svg class="i"><use href="#i-nav"/></svg>길찾기</a>
-  </div></div>
 </section>
+<div class="d-actions" id="dActions" hidden><div class="d-actions-in">
+  <a class="btn" id="dReviews" target="_blank" rel="noopener"><svg class="i"><use href="#i-msg"/></svg>사진·리뷰</a>
+  <a class="btn solid" id="dGo" target="_blank" rel="noopener"><svg class="i"><use href="#i-nav"/></svg><span id="dGoLbl">길찾기</span></a>
+</div></div>
 
 <dialog id="profile">
   <form method="dialog" id="profileForm">
@@ -465,6 +467,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("jff." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("jff." + k, JSON.stringify(v)); } catch {} },
 };
+const MIN_CHOICES = 10;   // show at least this many places when the area has them
 const WALK_MIN = 10, WALK_M_PER_MIN = 80, RADIUS = WALK_MIN * WALK_M_PER_MIN;   // max 10 minutes on foot ≈ 800m
 const DEFAULTS = { foods: ["sushi"], custom: "", radius: 1000, minRating: 3.8, minReviews: 30, prices: [], openNow: true, view: "none", viewStrict: false, sort: "best" };
 let S = Object.assign({}, DEFAULTS, store.get("settings", {}));
@@ -736,13 +739,56 @@ $("locForm").addEventListener("submit", async e => {
   } catch (err) { setStatus(err.message || String(err), true); }
 });
 
+// ---------- region helpers ----------
+function priceLabel(p) { const l = PRICE_LABEL[p.price] || ""; return isKorea(p) ? l.replace(/¥/g, "₩") : l; }
+function isKorea(pt) {
+  // Rough box for South Korea that leaves out Kyushu and Tsushima
+  if (!pt || pt.lat < 33 || pt.lat > 38.7 || pt.lng < 124.5 || pt.lng > 131) return false;
+  if (pt.lat < 34.3 && pt.lng > 127.2) return false;
+  if (pt.lat > 34.05 && pt.lat < 34.72 && pt.lng > 129.15 && pt.lng < 129.5) return false;
+  return true;
+}
+function dirUrl(p) {
+  const name = String(p.name || "목적지").replace(/^\(예시\)\s*/, "").replace(/[,/]/g, " ");
+  if (isKorea(p)) {
+    const to = encodeURIComponent(name) + "," + p.lat + "," + p.lng;
+    return here ? "https://map.kakao.com/link/by/walk/" + encodeURIComponent("내 위치") + "," + here.lat + "," + here.lng + "/" + to
+                : "https://map.kakao.com/link/to/" + to;
+  }
+  const real = !String(p.id).startsWith("demo");
+  let u = "https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + (real ? encodeURIComponent(name) + "&destination_place_id=" + encodeURIComponent(p.id) : p.lat + "," + p.lng);
+  if (here) u += "&origin=" + here.lat + "," + here.lng;
+  return u;
+}
+
 // ---------- search ----------
+// Korean query words (used when searching in Korea), Google place types for the nearby search,
+// and for cafe/dessert the types a result must have so a noodle shop never shows up as a cafe
+const FOOD_SEARCH = {
+  sushi: { ko: "스시 초밥", types: ["sushi_restaurant"] },
+  yakiniku: { ko: "고기구이", types: ["barbecue_restaurant"] },
+  ramen: { ko: "라멘", types: ["ramen_restaurant"] },
+  tonkatsu: { ko: "돈카츠" },
+  izakaya: { ko: "이자카야" },
+  unagi: { ko: "장어" },
+  udon: { ko: "우동 소바" },
+  tempura: { ko: "텐동 튀김" },
+  okonomi: { ko: "오코노미야키" },
+  yakitori: { ko: "야키토리 꼬치" },
+  kaisen: { ko: "해산물 회덮밥", types: ["seafood_restaurant"] },
+  gyudon: { ko: "규동" },
+  shabu: { ko: "샤브샤브" },
+  dessert: { ko: "디저트", types: ["dessert_shop", "bakery", "ice_cream_shop"], must: ["dessert_shop", "dessert_restaurant", "bakery", "ice_cream_shop", "cafe", "coffee_shop", "confectionery", "cake_shop", "donut_shop", "chocolate_shop", "tea_house"] },
+  cafe: { ko: "카페", types: ["cafe", "coffee_shop"], must: ["cafe", "coffee_shop", "tea_house", "cat_cafe", "dog_cafe", "bakery", "dessert_shop"] },
+};
 function buildQueries() {
-  const items = FOODS.filter(f => S.foods.includes(f.id)).map(f => ({ q: f.q, foodId: f.id }));
-  if (S.custom.trim()) items.push({ q: S.custom.trim(), foodId: null });
-  const view = VIEWS.find(v => v.id === S.view);
-  const qs = [];
-  items.forEach(it => { qs.push(it); if (view && view.q) qs.push({ q: view.q + " " + it.q, foodId: it.foodId }); });
+  const kr = isKorea(here), qs = [];
+  FOODS.filter(f => S.foods.includes(f.id)).forEach(f => {
+    const cfg = FOOD_SEARCH[f.id] || {};
+    qs.push({ kind: "text", q: kr && cfg.ko ? cfg.ko : f.q, foodId: f.id });
+    if (cfg.types) qs.push({ kind: "nearby", types: cfg.types, foodId: f.id });
+  });
+  if (S.custom.trim()) qs.push({ kind: "text", q: S.custom.trim(), foodId: null });
   return qs;
 }
 function viewInfo(name, reviews) {
@@ -767,23 +813,26 @@ function scorePlace(p) {
   return bayes * distFactor + viewBonus;
 }
 function sortList(list) {
-  const l = [...list];
-  if (S.sort === "near") l.sort((a, b) => a.dist - b.dist);
-  else if (S.sort === "rating") l.sort((a, b) => (b.rating || 0) - (a.rating || 0) || b.reviews - a.reviews);
-  else l.sort((a, b) => b.score - a.score);
-  return l;
+  // places that meet the rating/review bar always come before the top-up ones
+  const by = S.sort === "near" ? (a, b) => a.dist - b.dist
+    : S.sort === "rating" ? (a, b) => (b.rating || 0) - (a.rating || 0) || b.reviews - a.reviews
+    : (a, b) => b.score - a.score;
+  return [...list].sort((a, b) => (a.below - b.below) || by(a, b));
 }
 
 async function fetchGoogle(queries) {
   const { Place } = await loadGoogle(apiKey);
-  const fields = ["id", "displayName", "location", "rating", "userRatingCount", "priceLevel", "formattedAddress", "googleMapsURI", "photos", "regularOpeningHours", "utcOffsetMinutes", "businessStatus", "primaryTypeDisplayName"];
+  const fields = ["id", "displayName", "location", "rating", "userRatingCount", "priceLevel", "formattedAddress", "googleMapsURI", "photos", "regularOpeningHours", "utcOffsetMinutes", "businessStatus", "primaryTypeDisplayName", "types"];
   if (S.view !== "none") fields.push("reviews");
   const bounds = boundsFor(here, RADIUS);
   const errors = [];
-  const batches = await Promise.all(queries.map(qq => Place.searchByText({
-    textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region: "jp",
-    ...(S.openNow ? { isOpenNow: true } : {}),
-  }).then(r => r.places.map(p => ({ p, foodId: qq.foodId }))).catch(e => { console.warn(qq.q, e); errors.push(e); return []; })));
+  const region = isKorea(here) ? "kr" : "jp";
+  const run = (qq) => qq.kind === "nearby"
+    ? Place.searchNearby({ fields, locationRestriction: { center: { lat: here.lat, lng: here.lng }, radius: RADIUS }, includedTypes: qq.types, maxResultCount: 20, rankPreference: "POPULARITY", language: "ko", region })
+    : Place.searchByText({ textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region, ...(S.openNow ? { isOpenNow: true } : {}) });
+  const batches = await Promise.all(queries.map(qq => run(qq)
+    .then(r => r.places.map(p => ({ p, foodId: qq.foodId })))
+    .catch(e => { console.warn(qq.kind, qq.q || qq.types, e); errors.push(e); return []; })));
   if (errors.length === queries.length) {
     const msg = String(errors[0] && errors[0].message || errors[0]);
     throw new Error(/not been used|disabled|PERMISSION_DENIED|403/i.test(msg)
@@ -795,6 +844,8 @@ async function fetchGoogle(queries) {
   const out = [];
   for (const { p, foodId } of byId.values()) {
     if (p.businessStatus && p.businessStatus !== "OPERATIONAL") continue;
+    const must = foodId && FOOD_SEARCH[foodId] && FOOD_SEARCH[foodId].must;
+    if (must && !(p.types || []).some(t => must.includes(t))) continue;
     let open;
     try { open = await p.isOpen(); } catch { open = undefined; }
     out.push({
@@ -846,23 +897,20 @@ async function search() {
   setStatus("");
   try {
     const raw = demo ? demoData() : await fetchGoogle(buildQueries());
-    const nearby = raw.filter(p => haversine(here, p) <= RADIUS).length;
-    const list = raw.map(p => {
-      const vi = viewInfo(p.name, p.reviewTexts);
-      return Object.assign(p, { dist: haversine(here, p), viewScore: vi.score, viewQuote: vi.quote });
-    }).filter(p =>
-      p.dist <= RADIUS && (p.rating || 0) >= S.minRating && p.reviews >= S.minReviews &&
-      (!S.prices.length || !p.price || S.prices.includes(p.price)) &&
-      (!S.openNow || p.open !== false) &&
-      (S.view === "none" || !S.viewStrict || p.viewScore > 0)
-    );
-    list.forEach(p => p.score = scorePlace(p));
+    raw.forEach(p => Object.assign(p, { dist: haversine(here, p), viewScore: 0, viewQuote: "", below: false }));
+    const nearby = raw.filter(p => p.dist <= RADIUS);
+    const usable = nearby.filter(p => (!S.prices.length || !p.price || S.prices.includes(p.price)) && (!S.openNow || p.open !== false));
+    usable.forEach(p => p.score = scorePlace(p));
+    const good = usable.filter(p => (p.rating || 0) >= S.minRating && p.reviews >= S.minReviews);
+    const extra = good.length >= MIN_CHOICES ? [] : usable.filter(p => !good.includes(p)).sort((a, b) => b.score - a.score).slice(0, MIN_CHOICES - good.length);
+    extra.forEach(p => p.below = true);
+    const list = good.concat(extra);
     lastResults = list; pickedId = null;
     if (!list.length) {
       renderResults();
       const e = $("emptyHint");
-      e.textContent = nearby
-        ? "도보 10분 안에 " + nearby + "곳이 있지만 별점·리뷰 수 조건에 맞지 않아요. ‘조건’ 탭에서 기준을 낮춰 보세요."
+      e.textContent = nearby.length
+        ? "도보 10분 안에 " + nearby.length + "곳이 있지만 지금 영업 중이 아니거나 가격대 조건에 맞지 않아요."
         : "주위에 관련 음식점이 없습니다.";
       e.hidden = false;
       e.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -879,10 +927,10 @@ async function search() {
 // ---------- rendering ----------
 function openText(p) { return p.open === true ? ["영업 중", "st-open"] : p.open === false ? ["영업 종료", "st-closed"] : ["", ""]; }
 function metaLine(p) {
-  return [p.rating ? "★ " + p.rating.toFixed(1) : "별점 없음", "리뷰 " + p.reviews.toLocaleString(), fmtDist(p.dist), p.price ? PRICE_LABEL[p.price] : ""].filter(Boolean).join(" · ");
+  return [p.rating ? "★ " + p.rating.toFixed(1) : "별점 없음", "리뷰 " + p.reviews.toLocaleString(), fmtDist(p.dist), p.price ? priceLabel(p) : ""].filter(Boolean).join(" · ");
 }
 function listItem(p, rank) {
-  const b = el("button", "item"); b.type = "button";
+  const b = el("button", "item" + (p.below ? " below" : "")); b.type = "button";
   const th = el("span", "th"); fillImg(th, p);
   const mid = el("span"); mid.style.minWidth = "0"; mid.style.display = "grid";
   mid.append(el("span", "nm", (rank ? rank + ". " : "") + p.name), el("span", "mt", metaLine(p)));
@@ -906,7 +954,7 @@ function renderResults() {
   const body = el("div", "body");
   const title = el("div", "title"); title.append(el("span", null, lead.name), icon("chev"));
   body.append(title, el("div", "sub", (lead.type ? lead.type + " · " : "") + (lead.address || "")));
-  const line = el("div", "line"); line.append(icon("star", 16), el("span", null, (lead.rating ? lead.rating.toFixed(1) : "-") + "  ·  리뷰 " + lead.reviews.toLocaleString() + (lead.price ? "  ·  " + PRICE_LABEL[lead.price] : "")));
+  const line = el("div", "line"); line.append(icon("star", 16), el("span", null, (lead.rating ? lead.rating.toFixed(1) : "-") + "  ·  리뷰 " + lead.reviews.toLocaleString() + (lead.price ? "  ·  " + priceLabel(lead) : "")));
   body.append(line);
   const foot = el("div", "foot");
   const [ot, oc] = openText(lead);
@@ -919,15 +967,21 @@ function renderResults() {
   f.append(card);
   const box = $("results"); box.replaceChildren();
   const rest = list.filter(p => p.id !== lead.id).slice(0, 30);
-  rest.forEach((p, i) => box.append(listItem(p, i + 2)));
-  $("listCount").textContent = list.length + "곳";
+  let sepShown = false;
+  rest.forEach((p, i) => {
+    if (p.below && !sepShown) { box.append(el("div", "sep", "별점·리뷰 기준엔 못 미치지만 가까운 곳")); sepShown = true; }
+    box.append(listItem(p, i + 2));
+  });
+  const nBelow = list.filter(p => p.below).length;
+  $("listCount").textContent = (list.length - nBelow) + "곳" + (nBelow ? " + 근처 " + nBelow + "곳" : "");
   drawResultsMap([lead, ...rest]);
   $("listSec").hidden = !rest.length;
 }
 
 $("searchBtn").addEventListener("click", search);
 $("pickBtn").addEventListener("click", () => {
-  const top = sortList(lastResults).slice(0, 5);
+  const ranked = sortList(lastResults), okOnes = ranked.filter(p => !p.below);
+  const top = (okOnes.length ? okOnes : ranked).slice(0, 5);
   if (!top.length) return;
   pickedId = top[Math.floor(Math.random() * top.length)].id;
   renderResults();
@@ -970,7 +1024,8 @@ function openDetail(p) {
   $("dDist").textContent = (here ? fmtDist(p.dist) + " · " + (here.label || "내 위치") + "에서" : "");
   const maps = p.mapsUrl || "https://www.google.com/maps/search/?api=1&query=" + p.lat + "," + p.lng;
   $("dMapsLink").href = maps; $("dReviews").href = maps;
-  $("dGo").href = "https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + p.lat + "," + p.lng + (String(p.id).startsWith("demo") ? "" : "&destination_place_id=" + encodeURIComponent(p.id));
+  $("dGo").href = dirUrl(p);
+  $("dGoLbl").textContent = isKorea(p) ? "길찾기 (카카오맵)" : "길찾기";
   const h = $("dHours"); h.replaceChildren();
   if (p.hours && p.hours.length) {
     const today = (new Date().getDay() + 6) % 7;
@@ -979,7 +1034,7 @@ function openDetail(p) {
     h.hidden = false;
   } else h.hidden = true;
   $("dSave").setAttribute("aria-pressed", String(isSaved(p.id)));
-  $("detail").hidden = false; $("detail").scrollTop = 0;
+  $("detail").hidden = false; $("dActions").hidden = false; $("detail").scrollTop = 0;
   drawMap(p);
   document.body.style.overflow = "hidden";
   history.pushState({ detail: true }, "");
@@ -1091,7 +1146,7 @@ function drawSchematic(p) {
   pin.style.left = toX + "%"; pin.style.top = toY + "%";
   m.append(me, pin);
 }
-function closeDetail() { $("detail").hidden = true; document.body.style.overflow = ""; current = null; if (!$("view-saved").hidden) renderSaved(); }
+function closeDetail() { $("detail").hidden = true; $("dActions").hidden = true; document.body.style.overflow = ""; current = null; if (!$("view-saved").hidden) renderSaved(); }
 $("dBack").addEventListener("click", () => { if (history.state && history.state.detail) history.back(); else closeDetail(); });
 window.addEventListener("popstate", () => { if (!$("detail").hidden) closeDetail(); });
 $("dSave").addEventListener("click", () => { if (!current) return; toggleSave(current); $("dSave").setAttribute("aria-pressed", String(isSaved(current.id))); });
