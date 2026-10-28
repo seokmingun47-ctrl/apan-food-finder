@@ -672,7 +672,7 @@ $("locForm").addEventListener("submit", async e => {
   if (demo) { setHere(34.6687, 135.5013, q + " (체험 모드: 난바 기준)"); hideSuggest(); return; }
   try {
     const { Place } = await loadGoogle(apiKey);
-    const { places } = await Place.searchText({ textQuery: q, fields: ["displayName", "location"], maxResultCount: 1, region: "jp", language: "ko" });
+    const { places } = await Place.searchByText({ textQuery: q, fields: ["displayName", "location"], maxResultCount: 1, region: "jp", language: "ko" });
     if (!places.length) { showSuggest([], "‘" + q + "’을(를) 찾지 못했어요. 다른 이름으로 입력해 주세요."); return; }
     chooseSpot({ main: places[0].displayName, lat: places[0].location.lat(), lng: places[0].location.lng() });
   } catch (err) { setStatus(err.message || String(err), true); }
@@ -721,10 +721,17 @@ async function fetchGoogle(queries) {
   const fields = ["id", "displayName", "location", "rating", "userRatingCount", "priceLevel", "formattedAddress", "googleMapsURI", "photos", "regularOpeningHours", "utcOffsetMinutes", "businessStatus", "primaryTypeDisplayName"];
   if (S.view !== "none") fields.push("reviews");
   const bounds = boundsFor(here, S.radius);
-  const batches = await Promise.all(queries.map(qq => Place.searchText({
+  const errors = [];
+  const batches = await Promise.all(queries.map(qq => Place.searchByText({
     textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region: "jp",
     ...(S.openNow ? { isOpenNow: true } : {}),
-  }).then(r => r.places.map(p => ({ p, foodId: qq.foodId }))).catch(e => { console.warn(qq.q, e); return []; })));
+  }).then(r => r.places.map(p => ({ p, foodId: qq.foodId }))).catch(e => { console.warn(qq.q, e); errors.push(e); return []; })));
+  if (errors.length === queries.length) {
+    const msg = String(errors[0] && errors[0].message || errors[0]);
+    throw new Error(/not been used|disabled|PERMISSION_DENIED|403/i.test(msg)
+      ? "Google에서 장소 검색을 거부했어요. Google Cloud에서 ‘Places API (New)’가 사용 설정돼 있는지 확인해 주세요."
+      : "가게 검색에 실패했어요: " + msg);
+  }
   const byId = new Map();
   batches.flat().forEach(x => { if (!byId.has(x.p.id)) byId.set(x.p.id, x); });
   const out = [];
