@@ -734,10 +734,25 @@ function setHere(lat, lng, label) {
   store.set("lastHere", here);
 }
 function foodIcon(p) { const f = FOODS.find(f => f.id === p.foodId) || (p.foodId === undefined ? FOODS.find(f => S.foods.includes(f.id)) : null); return iconSvg(f ? f.id : "v_none"); }
-function fillImg(node, p) {
-  node.classList.toggle("noimg", !p.photo);
-  if (p.photo) node.style.backgroundImage = "url(\"" + p.photo + "\")";
-  else { node.style.backgroundImage = ""; node.insertAdjacentHTML("afterbegin", foodIcon(p)); }
+// Every Google photo that loads is billed, so only load the ones people actually see:
+// "now" for the top card and detail, "lazy" (when scrolled into view) for list thumbnails, "none" for the rest.
+const LIST_PHOTO_MAX = 8;
+function showPhoto(node, url) {
+  node.style.backgroundImage = "url(\"" + url + "\")";
+  node.classList.remove("noimg");
+  node.querySelectorAll("svg.fi").forEach(n => n.remove());
+}
+const lazyIO = "IntersectionObserver" in window ? new IntersectionObserver(entries => entries.forEach(e => {
+  if (!e.isIntersecting) return;
+  lazyIO.unobserve(e.target); showPhoto(e.target, e.target.dataset.src);
+})) : null;
+function fillImg(node, p, mode = "now") {
+  if (lazyIO) lazyIO.unobserve(node);
+  node.style.backgroundImage = ""; node.querySelectorAll("svg.fi").forEach(n => n.remove());
+  node.classList.add("noimg"); node.insertAdjacentHTML("afterbegin", foodIcon(p));
+  if (!p.photo || mode === "none") return;
+  if (mode === "lazy" && lazyIO) { node.dataset.src = p.photo; lazyIO.observe(node); return; }
+  showPhoto(node, p.photo);
 }
 
 // ---------- Google Maps loader ----------
@@ -1119,9 +1134,9 @@ function openText(p) { return p.open === true ? ["영업 중", "st-open"] : p.op
 function metaLine(p) {
   return [p.rating ? "★ " + p.rating.toFixed(1) : "별점 없음", "리뷰 " + p.reviews.toLocaleString(), fmtDist(p.dist), p.price ? priceLabel(p) : ""].filter(Boolean).join(" · ");
 }
-function listItem(p, rank) {
+function listItem(p, rank, photoMode = "lazy") {
   const b = el("button", "item" + (p.below ? " below" : "")); b.type = "button";
-  const th = el("span", "th"); fillImg(th, p);
+  const th = el("span", "th"); fillImg(th, p, photoMode);
   const mid = el("span"); mid.style.minWidth = "0"; mid.style.display = "grid";
   mid.append(el("span", "nm", (rank ? rank + ". " : "") + p.name), el("span", "mt", metaLine(p)));
   if (p.below) mid.append(el("span", "vw", p.reviews < S.minReviews ? "리뷰 적음 · 기준 미달" : "별점 기준 미달"));
@@ -1159,7 +1174,7 @@ function renderResults() {
   f.append(card);
   const box = $("results"); box.replaceChildren();
   const rest = list.filter(p => p.id !== lead.id).slice(0, 30);
-  rest.forEach((p, i) => box.append(listItem(p, i + 2)));
+  rest.forEach((p, i) => box.append(listItem(p, i + 2, i < LIST_PHOTO_MAX ? "lazy" : "none")));
   const nBelow = list.filter(p => p.below).length;
   $("listCount").textContent = (list.length - nBelow) + "곳" + (nBelow ? " + 근처 " + nBelow + "곳" : "");
   drawResultsMap([lead, ...rest]);
