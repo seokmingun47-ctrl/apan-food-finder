@@ -158,6 +158,14 @@ input[type=range] { width: 100%; accent-color: var(--ink); }
 .map .pin { width: 34px; height: 34px; background: var(--ink); color: var(--inv); box-shadow: 0 0 0 6px color-mix(in srgb, var(--ink) 12%, transparent); }
 .map .me { width: 14px; height: 14px; background: var(--surface); border: 3px solid var(--ink-2); }
 .map svg.route { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map.real { background-image: none; }
+.map.tall { aspect-ratio: 4 / 3; }
+.map .fallback { position: absolute; inset: auto 0 12px; text-align: center; font-size: 12px; color: var(--muted); }
+.gm-pin { position: absolute; transform: translate(-50%, -100%); cursor: pointer; display: grid; justify-items: center; }
+.gm-pin b { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px; background: #0b0b0c; color: #fff; font: 800 13px/30px var(--font); text-align: center; box-shadow: 0 3px 10px rgb(0 0 0 / .3); border: 2px solid #fff; }
+.gm-pin i { width: 2px; height: 8px; background: #0b0b0c; }
+.gm-pin.lead b { background: #fff; color: #0b0b0c; border-color: #0b0b0c; }
+.gm-me { position: absolute; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 0 0 6px rgb(37 99 235 / .2); }
 .map-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); margin-top: -6px; }
 .map-foot a { color: var(--ink); font-weight: 800; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
 .hours { font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
@@ -226,6 +234,11 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   <section class="sec" id="featSec" hidden aria-labelledby="h-feat">
     <div class="sec-head"><h2 id="h-feat">추천</h2><button class="aux" type="button" id="pickBtn">아무거나 골라줘</button></div>
     <div id="feature"></div>
+  </section>
+
+  <section class="sec" id="mapSec" hidden aria-labelledby="h-map">
+    <div class="sec-head"><h2 id="h-map">지도</h2><span class="aux">핀을 누르면 상세 정보</span></div>
+    <div class="map tall" id="resMap"></div>
   </section>
 
   <section class="sec" id="listSec" hidden aria-labelledby="h-list">
@@ -681,7 +694,7 @@ function renderResults() {
   const list = sortList(lastResults);
   $("emptyHint").hidden = !!list.length || !!$("status").textContent;
   $("featSec").hidden = !list.length; $("listSec").hidden = list.length < 2;
-  if (!list.length) { $("emptyHint").hidden = true; return; }
+  if (!list.length) { $("emptyHint").hidden = true; $("mapSec").hidden = true; return; }
   const lead = list.find(p => p.id === pickedId) || list[0];
   const f = $("feature"); f.replaceChildren();
   const card = el("button", "feature"); card.type = "button";
@@ -706,6 +719,7 @@ function renderResults() {
   const rest = list.filter(p => p.id !== lead.id).slice(0, 30);
   rest.forEach((p, i) => box.append(listItem(p, i + 2)));
   $("listCount").textContent = list.length + "곳";
+  drawResultsMap([lead, ...rest]);
   $("listSec").hidden = !rest.length;
 }
 
@@ -752,7 +766,6 @@ function openDetail(p) {
   const v = $("dView");
   if (S.view !== "none" && p.viewScore > 0) { v.hidden = false; v.textContent = VIEWS.find(x => x.id === S.view).ko + " 관련 언급 " + p.viewScore + "회" + (p.viewQuote ? " — “…" + p.viewQuote + "…”" : ""); }
   else v.hidden = true;
-  drawMap(p);
   $("dDist").textContent = (here ? fmtDist(p.dist) + " · " + (here.label || "내 위치") + "에서" : "");
   const maps = p.mapsUrl || "https://www.google.com/maps/search/?api=1&query=" + p.lat + "," + p.lng;
   $("dMapsLink").href = maps; $("dReviews").href = maps;
@@ -766,12 +779,102 @@ function openDetail(p) {
   } else h.hidden = true;
   $("dSave").setAttribute("aria-pressed", String(isSaved(p.id)));
   $("detail").hidden = false; $("detail").scrollTop = 0;
+  drawMap(p);
   document.body.style.overflow = "hidden";
   history.pushState({ detail: true }, "");
 }
+// ---------- real map (Google Maps, monochrome) ----------
+const MONO_LIGHT = [
+  { elementType: "geometry", stylers: [{ color: "#f2f2f3" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#55555c" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }] },
+  { elementType: "labels.icon", stylers: [{ saturation: -100 }, { lightness: 20 }] },
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#e6e6e8" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#dcdce0" }] },
+  { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#c4c4c9" }] },
+  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#0b0b0c" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#cfd0d4" }] },
+];
+const MONO_DARK = [
+  { elementType: "geometry", stylers: [{ color: "#1a1a1d" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#9a9aa2" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#0b0b0c" }] },
+  { elementType: "labels.icon", stylers: [{ saturation: -100 }, { lightness: -30 }] },
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#222226" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2c2c31" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a3a40" }] },
+  { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#3f3f46" }] },
+  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#e4e4e7" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0f0f11" }] },
+];
+const darkMQ = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+const mapStyles = () => (darkMQ && darkMQ.matches ? MONO_DARK : MONO_LIGHT);
+const maps = {};   // container id -> { map, overlays: [] }
+async function getMap(id) {
+  if (maps[id]) return maps[id];
+  await loadGoogle(apiKey);
+  const { Map } = await google.maps.importLibrary("maps");
+  const box = $(id); box.replaceChildren(); box.classList.add("real");
+  const map = new Map(box, { center: here || { lat: 34.6687, lng: 135.5013 }, zoom: 15, styles: mapStyles(), disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: "cooperative" });
+  maps[id] = { map, overlays: [] };
+  return maps[id];
+}
+if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener("change", () => Object.values(maps).forEach(m => m.map.setOptions({ styles: mapStyles() })));
+function htmlMarker(m, pos, node, onClick) {
+  // HTML overlay marker: no Map ID needed, styled like the rest of the app
+  const ov = new google.maps.OverlayView();
+  ov.onAdd = function () {
+    this.getPanes().overlayMouseTarget.append(node);
+    if (onClick) { google.maps.OverlayView.preventMapHitsAndGesturesFrom(node); node.addEventListener("click", onClick); }
+  };
+  ov.draw = function () {
+    const pt = this.getProjection().fromLatLngToDivPixel(new google.maps.LatLng(pos.lat, pos.lng));
+    if (pt) { node.style.left = pt.x + "px"; node.style.top = pt.y + "px"; }
+  };
+  ov.onRemove = () => node.remove();
+  ov.setMap(m.map); m.overlays.push(ov);
+}
+function clearMarkers(m) { m.overlays.forEach(o => o.setMap(null)); m.overlays = []; }
+function pinNode(label, lead) { const d = el("div", "gm-pin" + (lead ? " lead" : "")); d.append(el("b", null, label), el("i")); return d; }
+function fit(m, pts, single) {
+  if (pts.length === 1 || single) { m.map.setCenter(pts[pts.length - 1]); m.map.setZoom(16); return; }
+  const b = new google.maps.LatLngBounds(); pts.forEach(p => b.extend(p));
+  m.map.fitBounds(b, 48);
+  google.maps.event.addListenerOnce(m.map, "idle", () => { if (m.map.getZoom() > 17) m.map.setZoom(17); });
+}
+async function drawRealDetail(p) {
+  const m = await getMap("dMap");
+  clearMarkers(m);
+  if (here) htmlMarker(m, here, el("div", "gm-me"));
+  htmlMarker(m, p, pinNode(p.name.length > 12 ? p.name.slice(0, 12) + "…" : p.name, false));
+  fit(m, here ? [here, { lat: p.lat, lng: p.lng }] : [{ lat: p.lat, lng: p.lng }]);
+}
+async function drawResultsMap(list) {
+  const sec = $("mapSec");
+  if (!list.length) { sec.hidden = true; return; }
+  sec.hidden = false;
+  if (demo) {
+    const box = $("resMap"); box.classList.remove("real"); box.replaceChildren(el("span", "fallback", "체험 모드에서는 실제 지도가 나오지 않아요. API 키를 넣으면 여기에 지도가 표시돼요."));
+    return;
+  }
+  try {
+    const m = await getMap("resMap");
+    clearMarkers(m);
+    if (here) htmlMarker(m, here, el("div", "gm-me"));
+    list.forEach((p, i) => htmlMarker(m, p, pinNode(String(i + 1), i === 0), () => openDetail(p)));
+    fit(m, [...(here ? [here] : []), ...list.map(p => ({ lat: p.lat, lng: p.lng }))]);
+  } catch (err) { sec.hidden = true; console.warn(err); }
+}
 function drawMap(p) {
+  if (!demo) { drawRealDetail(p).catch(err => { console.warn(err); drawSchematic(p); }); return; }
+  drawSchematic(p);
+}
+function drawSchematic(p) {
   // Schematic map: places you and the shop on a grid by their real bearing, scaled to the search radius
-  const m = $("dMap"); m.replaceChildren();
+  const m = $("dMap"); m.replaceChildren(); m.classList.remove("real"); delete maps.dMap;
   const pin = el("span", "pin"); pin.append(icon("pin", 16));
   if (!here) { pin.style.left = "50%"; pin.style.top = "50%"; m.append(pin); return; }
   const dx = (p.lng - here.lng) * 111320 * Math.cos(here.lat * Math.PI / 180), dy = (p.lat - here.lat) * 111320;
