@@ -830,7 +830,7 @@ async function fetchGoogle(queries) {
   const run = (qq) => qq.kind === "nearby"
     ? Place.searchNearby({ fields, locationRestriction: { center: { lat: here.lat, lng: here.lng }, radius: RADIUS }, includedTypes: qq.types, maxResultCount: 20, rankPreference: "POPULARITY", language: "ko", region })
     : Place.searchByText({ textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region, ...(S.openNow ? { isOpenNow: true } : {}) });
-  const batches = await Promise.all(queries.map(qq => run(qq)
+  const batches = await Promise.all(queries.map(qq => Promise.resolve().then(() => run(qq))
     .then(r => r.places.map(p => ({ p, foodId: qq.foodId })))
     .catch(e => { console.warn(qq.kind, qq.q || qq.types, e); errors.push(e); return []; })));
   if (errors.length === queries.length) {
