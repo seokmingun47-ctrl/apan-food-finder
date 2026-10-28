@@ -94,6 +94,9 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; app
 .sec-head .aux { font-size: 13px; color: var(--muted); font-weight: 600; }
 .sec-head button.aux { text-decoration: underline; text-underline-offset: 3px; }
 
+.cats { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -20px; padding: 2px 20px 4px; }
+.cats::-webkit-scrollbar { display: none; }
+.cats .chip { flex: none; }
 .foodgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px 4px; }
 .viewgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 4px; }
 .pick { display: grid; justify-items: center; gap: 4px; min-width: 0; position: relative; }
@@ -290,6 +293,7 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
 
   <section class="sec" aria-labelledby="h-food">
     <div class="sec-head"><h2 id="h-food">음식</h2><button class="aux" type="button" id="clearFood">선택 해제</button></div>
+    <div class="cats" id="foodCats" role="tablist" aria-label="음식 종류"></div>
     <div class="foodgrid" id="foodChips"></div>
   </section>
 
@@ -392,7 +396,7 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
 
 <div class="roulette" id="roulette" hidden role="dialog" aria-modal="true" aria-labelledby="rlName">
   <div class="rl-card">
-    <p class="rl-top">오늘 뭐 먹지?</p>
+    <p class="rl-top" id="rlTop">오늘 뭐 먹지?</p>
     <div class="rl-win" id="rlWin"><div class="rl-art" id="rlArt"></div></div>
     <div class="rl-name" id="rlName" aria-live="polite"></div>
     <p class="rl-sub" id="rlSub"></p>
@@ -453,7 +457,36 @@ const FOODS = [
   { id: "shabu", ko: "샤브샤브", jp: "鍋", q: "しゃぶしゃぶ すき焼き" },
   { id: "dessert", ko: "디저트", jp: "甘", q: "スイーツ デザート" },
   { id: "cafe", ko: "카페", jp: "珈琲", q: "カフェ" },
+  { id: "bakery", ko: "베이커리", jp: "パン", q: "パン屋 ベーカリー" },
+  { id: "samgyeop", ko: "삼겹살", jp: "豚", q: "サムギョプサル 韓国料理" },
+  { id: "steak", ko: "스테이크", jp: "肉", q: "ステーキ" },
+  { id: "chicken", ko: "치킨", jp: "鶏", q: "フライドチキン 唐揚げ" },
+  { id: "gukbap", ko: "국밥", jp: "汁", q: "クッパ 韓国料理" },
+  { id: "bibimbap", ko: "비빔밥", jp: "飯", q: "ビビンバ" },
+  { id: "tteok", ko: "떡볶이", jp: "餅", q: "トッポギ" },
+  { id: "jjajang", ko: "짜장면", jp: "麺", q: "ジャージャー麺 中華" },
+  { id: "jjamppong", ko: "짬뽕", jp: "麺", q: "ちゃんぽん" },
+  { id: "mala", ko: "마라탕", jp: "辣", q: "麻辣湯" },
+  { id: "dimsum", ko: "딤섬", jp: "点心", q: "点心 飲茶 小籠包" },
+  { id: "pasta", ko: "파스타", jp: "伊", q: "パスタ イタリアン" },
+  { id: "pizza", ko: "피자", jp: "伊", q: "ピザ" },
+  { id: "burger", ko: "햄버거", jp: "米", q: "ハンバーガー" },
+  { id: "pho", ko: "쌀국수", jp: "越", q: "フォー ベトナム料理" },
+  { id: "curry", ko: "카레", jp: "印", q: "カレー" },
+  { id: "padthai", ko: "팟타이", jp: "泰", q: "タイ料理 パッタイ" },
 ];
+// Category tabs above the food grid (a food can sit in more than one)
+const CATEGORIES = [
+  { id: "all", ko: "전체" },
+  { id: "jp", ko: "일식", foods: ["sushi", "ramen", "tonkatsu", "udon", "tempura", "unagi", "kaisen", "gyudon", "okonomi", "shabu", "izakaya"] },
+  { id: "meat", ko: "고기", foods: ["yakiniku", "samgyeop", "steak", "yakitori", "chicken"] },
+  { id: "kr", ko: "한식", foods: ["gukbap", "bibimbap", "tteok", "chicken", "samgyeop"] },
+  { id: "cn", ko: "중식", foods: ["jjajang", "jjamppong", "mala", "dimsum"] },
+  { id: "west", ko: "양식", foods: ["pasta", "pizza", "burger", "steak"] },
+  { id: "asia", ko: "아시안", foods: ["pho", "curry", "padthai"] },
+  { id: "sweet", ko: "카페·디저트", foods: ["cafe", "dessert", "bakery"] },
+];
+const catFoods = (id) => { const c = CATEGORIES.find(c => c.id === id); return !c || !c.foods ? FOODS : FOODS.filter(f => c.foods.includes(f.id)); };
 const VIEWS = [
   { id: "none", ko: "상관없음" },
   { id: "sea", ko: "바다·오션뷰", q: "海が見える", kw: ["海が見え", "海の見え", "オーシャンビュー", "海沿い", "海辺", "ビーチ", "海を眺め", "港", "ocean", "sea view", "seaside", "beach", "harbor", "바다", "오션뷰", "해변", "항구"] },
@@ -493,6 +526,23 @@ const ICONS = {
   shabu: '<path d="M4 33h6v5H4zM54 33h6v5h-6z" fill="#4a4a4f"/><path d="M8 31h48v10c0 9-8 15-24 15S8 50 8 41z" fill="#4a4a4f"/><path d="M14 44c5 3 31 3 36 0" fill="none" stroke="#77777d" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#f2e2c4"/><path d="M13 31c3-4 8-5 12-3s5 4 1 5c-4 1-10 1-13-2z" fill="#f28c9b"/><path d="M16 30c2-1 5-1 7 0" stroke="#fff" stroke-width="1.6" fill="none"/><rect x="29" y="27" width="7" height="6" rx="1" fill="#fff"/><path d="M39 30c1-3 6-4 8-1-1 2-6 3-8 1z" fill="#8d6e63"/><path d="M45 34c1-3 4-4 6-3 0 2-3 4-6 3z" fill="#9ccc65" stroke-width="1.6"/><path d="M22 18c-2 2 2 3 0 6M32 15c-2 2 2 4 0 7M42 18c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
   dessert: SH + '<path d="M44 4l5 16" stroke-width="4"/><path d="M44 4l5 16" stroke="#d9a35b" stroke-width="2"/><path d="M27 48h10v6H27z" fill="#e9f6ff"/><path d="M20 54h24v3H20z" fill="#e9f6ff"/><path d="M17 21h30l-4 21c-1 5-5 7-11 7s-10-2-11-7z" fill="#e9f6ff"/><path d="M19 31h26l-1.1 6H20.1z" fill="#9ccc65" stroke="none"/><path d="M20.2 37h23.6l-.9 5H21.1z" fill="#fff3d6" stroke="none"/><path d="M17 21h30l-4 21c-1 5-5 7-11 7s-10-2-11-7z" fill="none"/><path d="M21 25l2 14" stroke="#fff" stroke-width="2" fill="none"/><path d="M14 22c0-5 4-7 8-6 1-4 5-6 9-6s8 2 9 6c4-1 8 1 8 6z" fill="#fff"/><path d="M28 13c-3-4 0-8 4-8s6 4 3 8l-3 4z" fill="#e8413b"/><path d="M29 6c1-2 3-2 3 0 1-2 3-2 3 0" fill="#7cb342" stroke-width="1.6"/><g fill="#ffe082" stroke="none"><circle cx="31" cy="10" r=".9"/><circle cx="34" cy="11" r=".9"/><circle cx="32" cy="13" r=".9"/></g>',
   cafe: '<ellipse cx="30" cy="52" rx="23" ry="5" fill="#fff"/><path d="M48 31h3c4 0 6 3 6 6s-2 6-6 6h-4" fill="none" stroke-width="3.2"/><path d="M11 28h38v8c0 10-8 16-19 16S11 46 11 36z" fill="#fff"/><path d="M12 38c5 4 31 4 36 0" fill="none" stroke="#3f7d5a" stroke-width="3"/><ellipse cx="30" cy="28" rx="19" ry="5" fill="#8d5a34"/><path d="M26.5 27c0-2 3.5-2 3.5 0 0-2 3.5-2 3.5 0 0 2-3.5 3.5-3.5 3.5s-3.5-1.5-3.5-3.5z" fill="#f5e1c8" stroke="none"/><path d="M23 19c-2-3 2-4 0-7M30 19c-2-3 2-4 0-7M37 19c-2-3 2-4 0-7" fill="none" stroke-width="2"/>',
+  samgyeop: '<circle cx="32" cy="35" r="23" fill="#3a3a3c"/><path d="M13 27h38M10 35h44M13 43h38" stroke="#77777d" stroke-width="1.6" fill="none"/><rect x="15" y="20" width="32" height="8" rx="3" fill="#f4a3a8"/><path d="M17 24h28" stroke="#fff" stroke-width="2"/><rect x="13" y="31" width="34" height="8" rx="3" fill="#f08c94"/><path d="M15 35h30" stroke="#fff" stroke-width="2"/><rect x="17" y="42" width="30" height="8" rx="3" fill="#f4a3a8"/><path d="M19 46h26" stroke="#fff" stroke-width="2"/><g fill="#fff8e1" stroke-width="1.6"><circle cx="51" cy="29" r="2.6"/><circle cx="50" cy="40" r="2.6"/></g><path d="M24 10c-2 2 2 3 0 6M34 7c-2 2 2 4 0 7" fill="none" stroke-width="2"/>',
+  steak: '<ellipse cx="32" cy="43" rx="27" ry="12" fill="#fff"/><path d="M13 39c0-8 8-14 19-14 10 0 18 5 18 11 0 7-9 11-19 11-10 0-18-3-18-8z" fill="#8d4a2b"/><path d="M22 31l8 12M30 28l9 13M39 28l7 10" stroke="#5a2a14" stroke-width="2.2" fill="none"/><path d="M15 40c2 4 9 6 16 6" stroke="#f2c9a0" stroke-width="2.2" fill="none"/><circle cx="52" cy="46" r="4" fill="#66bb6a"/><circle cx="48" cy="49" r="3" fill="#66bb6a"/><path d="M8 20l7 9M11 18l7 9" fill="none" stroke-width="2"/>',
+  gukbap: '<ellipse cx="32" cy="56" rx="23" ry="3.5" fill="#bdbdbd"/><path d="M9 30h46l-3 16c-1 6-8 10-20 10S13 52 12 46z" fill="#5d4037"/><path d="M14 42c6 3 30 3 36 0" fill="none" stroke="#8d6e63" stroke-width="2"/><ellipse cx="32" cy="30" rx="23" ry="6.5" fill="#f5efe3"/><path d="M18 30c2-3 7-3 9 0-2 2-7 2-9 0zM34 28c2-3 7-3 9 0-2 2-7 2-9 0z" fill="#c58b6b" stroke-width="1.6"/><g fill="#7cb342" stroke="none"><circle cx="29" cy="31" r="1.4"/><circle cx="45" cy="31" r="1.4"/><circle cx="24" cy="28" r="1.4"/></g><path d="M22 17c-2 2 2 3 0 6M32 14c-2 2 2 4 0 7M42 17c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
+  bibimbap: '<path d="M25 52h14v4H25z" fill="#37373b"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#37373b"/><path d="M14 42c5 4 31 4 36 0" fill="none" stroke="#5b5b61" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#fff"/><path d="M11 31c1-4 6-6 11-5l1 6z" fill="#ff8a3d" stroke-width="1.6"/><path d="M42 26c5-1 10 1 11 5l-11 1z" fill="#43a047" stroke-width="1.6"/><path d="M24 25c3-2 8-2 10 0l-2 3h-6z" fill="#fdd835" stroke-width="1.6"/><path d="M26 36l-2-3h16l-2 3c-3 1-9 1-12 0z" fill="#8d5a34" stroke-width="1.6"/><ellipse cx="32" cy="30.5" rx="5.5" ry="3.6" fill="#fff"/><circle cx="32" cy="30.5" r="2.2" fill="#ffa000" stroke="none"/>',
+  tteok: '<ellipse cx="32" cy="41" rx="27" ry="13" fill="#d84339"/><path d="M12 38c6-4 12 2 20-2s14 2 20-1" fill="none" stroke="#ff8a80" stroke-width="2"/><rect x="14" y="32" width="15" height="6" rx="3" transform="rotate(-18 21 35)" fill="#fff1e6"/><rect x="27" y="40" width="15" height="6" rx="3" transform="rotate(12 34 43)" fill="#fff1e6"/><rect x="17" y="43" width="13" height="6" rx="3" transform="rotate(-8 23 46)" fill="#fff1e6"/><path d="M37 28l11 3-5 8z" fill="#e8b36b"/><ellipse cx="45" cy="44" rx="5" ry="3.6" fill="#fff"/><circle cx="45" cy="44" r="1.8" fill="#ffa000" stroke="none"/><g fill="#7cb342" stroke="none"><circle cx="31" cy="35" r="1.4"/><circle cx="25" cy="40" r="1.4"/><circle cx="38" cy="38" r="1.4"/></g>',
+  chicken: SH + '<path d="M38 40l10 10" stroke-width="6"/><path d="M38 40l10 10" stroke="#fff" stroke-width="2.6"/><circle cx="51" cy="48" r="3.8" fill="#fff"/><circle cx="47" cy="52" r="3.8" fill="#fff"/><path d="M31 41c-9 3-19-2-20-12s7-18 17-17 16 9 14 17c-1 5-4 9-11 12z" fill="#e8a33c"/><path d="M16 27c0-5 4-9 9-10" fill="none" stroke="#fff3c4" stroke-width="2.2"/><g fill="#b9731f" stroke="none"><circle cx="22" cy="31" r="1.3"/><circle cx="29" cy="24" r="1.3"/><circle cx="34" cy="32" r="1.3"/><circle cx="26" cy="37" r="1.3"/><circle cx="36" cy="22" r="1.3"/></g>',
+  jjajang: '<path d="M44 5 31 27M52 8 35 29" fill="none" stroke-width="3"/><path d="M25 52h14v4H25z" fill="#fff"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#fff"/><path d="M14 40h36M17 46h30" fill="none" stroke="#e53935" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#f3dfb0"/><path d="M14 31c3-4 9-5 18-5s15 1 18 5c-3 3-9 4-18 4s-15-1-18-4z" fill="#3e2a1e"/><path d="M22 29c3-1 6-1 8 0" stroke="#7a5a44" stroke-width="1.6" fill="none"/><path d="M33 27l9 2M35 31l8 1" stroke="#7cb342" stroke-width="2.4" fill="none"/>',
+  jjamppong: '<path d="M25 52h14v4H25z" fill="#fff"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#fff"/><path d="M14 40h36M17 46h30" fill="none" stroke="#1e88e5" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#e64a19"/><path d="M14 30c1-4 8-5 11-1-3 3-8 3-11 1z" fill="#3b2f4a" stroke-width="1.6"/><path d="M40 27c3-3 9-2 10 1-3 3-8 3-10-1z" fill="#3b2f4a" stroke-width="1.6"/><circle cx="31" cy="30" r="3.2" fill="#fff" stroke-width="1.6"/><circle cx="31" cy="30" r="1.2" fill="#e64a19" stroke="none"/><path d="M24 34c2 1 4 1 6 0M36 34c2 1 4 1 6 0" stroke="#ffccbc" stroke-width="1.8" fill="none"/><path d="M22 17c-2 2 2 3 0 6M32 14c-2 2 2 4 0 7M42 17c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
+  mala: '<path d="M25 52h14v4H25z" fill="#2f2f33"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#2f2f33"/><path d="M14 42c5 4 31 4 36 0" fill="none" stroke="#e53935" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#c62828"/><path d="M14 30c3-3 8-3 10 0-3 2-7 2-10 0z" fill="#ff5252" stroke-width="1.6"/><path d="M24 30l2-2" stroke="#43a047" stroke-width="1.8" fill="none"/><path d="M40 28c3-3 8-2 9 1-3 2-7 2-9-1z" fill="#ff5252" stroke-width="1.6"/><rect x="28" y="27" width="7" height="5" rx="1" fill="#fff3d6" stroke-width="1.6"/><path d="M36 33c1-2 1-3 0-5M38 33c1-2 1-3 0-5" stroke="#fff" stroke-width="1.6" fill="none"/><g fill="#5d1a1a" stroke="none"><circle cx="20" cy="34" r="1"/><circle cx="44" cy="33" r="1"/><circle cx="25" cy="27" r="1"/></g><path d="M22 18c-2 2 2 3 0 6M32 15c-2 2 2 4 0 7M42 18c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
+  dimsum: '<path d="M8 36h48v9c0 6-10 10-24 10S8 51 8 45z" fill="#d7a86e"/><path d="M12 44c6 3 34 3 40 0M10 40c8 2 36 2 44 0" fill="none" stroke="#a87a43" stroke-width="1.6"/><ellipse cx="32" cy="36" rx="24" ry="7" fill="#c8945a"/><path d="M11 35c0-7 4-11 9-11s9 4 9 11z" fill="#fff"/><path d="M27 33c0-8 3-13 7-13s8 5 8 13z" fill="#fff"/><path d="M39 35c0-7 4-11 8-11s9 4 9 11z" fill="#fff"/><path d="M17 27l3 5M23 27l-3 5M31 23l3 6M37 23l-3 6M44 27l3 5M50 27l-3 5" fill="none" stroke-width="1.6"/><path d="M22 14c-2 2 2 3 0 6M34 11c-2 2 2 4 0 7M46 14c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
+  pasta: '<ellipse cx="32" cy="43" rx="27" ry="12" fill="#fff"/><path d="M12 40c4-10 36-12 40 0-5 7-35 8-40 0z" fill="#f6d36b"/><path d="M19 39c6-4 20-4 26 0M21 43c5-2 17-2 22 0M24 35c4-2 12-2 16 0" stroke="#c99a2e" stroke-width="1.6" fill="none"/><path d="M23 35c2-5 14-5 16 0 0 3-16 3-16 0z" fill="#e53935"/><path d="M35 30c2-3 6-3 7 0-2 2-5 2-7 0z" fill="#43a047" stroke-width="1.6"/><path d="M50 12l-6 22M53 13l-6 22" fill="none" stroke-width="2"/>',
+  pizza: SH + '<path d="M10 17c14-9 30-9 44 0L32 57z" fill="#ffd54f"/><path d="M10 17c14-9 30-9 44 0l-3 6c-12-7-26-7-38 0z" fill="#e0a04a"/><path d="M14 22c11-5 25-5 36 0" fill="none" stroke="#f5c16c" stroke-width="2"/><g fill="#e53935"><circle cx="27" cy="30" r="4.2"/><circle cx="38" cy="36" r="3.6"/><circle cx="31" cy="44" r="3.2"/></g><path d="M22 36l3 2M40 28l3 1M35 48l2 2" stroke="#43a047" stroke-width="2.4" fill="none"/><path d="M24 50c0 3 2 4 3 2" fill="#ffd54f" stroke-width="1.6"/>',
+  burger: SH + '<path d="M12 48h40v2c0 4-3 6-7 6H19c-4 0-7-2-7-6z" fill="#f0a840"/><rect x="10" y="39" width="44" height="9" rx="4.5" fill="#6d3b1f"/><path d="M13 37h38v3l-6 5-5-4-6 4-5-4-6 4-5-4z" fill="#ffd54f"/><path d="M10 34c2-2 4 1 7 0s4-2 7 0 4 1 7 0 4-2 7 0 4 1 7 0 4-2 6 0v3H10z" fill="#7cb342"/><path d="M12 33c0-11 9-18 20-18s20 7 20 18z" fill="#f0a840"/><g fill="#fff8e1" stroke="none"><ellipse cx="24" cy="23" rx="1.6" ry="1"/><ellipse cx="32" cy="20" rx="1.6" ry="1"/><ellipse cx="40" cy="24" rx="1.6" ry="1"/><ellipse cx="30" cy="27" rx="1.6" ry="1"/></g><path d="M17 26c2-4 5-6 8-7" fill="none" stroke="#ffd08a" stroke-width="2"/>',
+  pho: '<path d="M44 5 31 27M52 8 35 29" fill="none" stroke-width="3"/><path d="M25 52h14v4H25z" fill="#26a69a"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#26a69a"/><path d="M14 42c3-2 5 2 8 0s5 2 8 0 5 2 8 0 5 2 8 0" fill="none" stroke="#fff" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#f7e3b5"/><path d="M15 31c4 2 8-2 12 0s8 2 12 0 6-1 9 0" stroke-width="4.5" fill="none"/><path d="M15 31c4 2 8-2 12 0s8 2 12 0 6-1 9 0" stroke="#fff" stroke-width="2.2" fill="none"/><path d="M19 27c2-3 8-3 10 0-3 2-7 2-10 0z" fill="#b5735b" stroke-width="1.6"/><path d="M38 33c2-3 6-3 8 0-2 2-6 2-8 0z" fill="#43a047" stroke-width="1.6"/><path d="M46 24a5 5 0 0 1 8 4z" fill="#c0ca33" stroke-width="1.6"/>',
+  curry: '<ellipse cx="32" cy="43" rx="27" ry="12" fill="#fff"/><path d="M8 42c0-9 7-14 15-14s13 5 13 13c-6 4-22 5-28 1z" fill="#fff"/><path d="M13 36c2-2 5-3 8-3" fill="none" stroke="#e0e0e0" stroke-width="2"/><path d="M29 41c0-7 8-11 15-11s12 5 12 11c-5 5-22 5-27 0z" fill="#c77d1e"/><rect x="37" y="34" width="5" height="5" rx="1" fill="#ff8a3d" stroke-width="1.6"/><rect x="45" y="37" width="5" height="5" rx="1" fill="#ffe082" stroke-width="1.6"/><rect x="38" y="41" width="4" height="4" rx="1" fill="#8d5a34" stroke-width="1.6"/><path d="M52 14c3 0 5 3 4 6l-7 12" fill="none" stroke-width="2.6"/>',
+  padthai: '<ellipse cx="32" cy="43" rx="27" ry="12" fill="#fff"/><path d="M11 41c4-10 38-10 42 0-6 7-36 7-42 0z" fill="#f2b45c"/><path d="M18 40c6-4 22-4 28 0M20 44c6-2 18-2 24 0M24 36c4-2 12-2 16 0" stroke="#c9822c" stroke-width="1.6" fill="none"/><path d="M22 35c0-4 6-6 8-3-1 2-4 2-5 1" fill="#ff8a80" stroke-width="1.6"/><path d="M34 33c1-4 7-5 8-1-1 2-4 2-5 0" fill="#ff8a80" stroke-width="1.6"/><g fill="#a1662f" stroke="none"><circle cx="28" cy="41" r="1.3"/><circle cx="37" cy="42" r="1.3"/><circle cx="32" cy="38" r="1.3"/></g><path d="M45 31a5 5 0 0 1 9 4z" fill="#c0ca33" stroke-width="1.6"/><path d="M14 38l5-2M44 44l5 1" stroke="#7cb342" stroke-width="2.2" fill="none"/>',
+  bakery: SH + '<path d="M7 42c2-13 14-21 25-21s23 8 25 21c-4 2-8 0-10-3-3 3-8 5-15 5s-12-2-15-5c-2 3-6 5-10 3z" fill="#e8a33c"/><path d="M20 26l4 14M32 21v19M44 26l-4 14" fill="none" stroke-width="2"/><path d="M14 34c1-3 3-5 5-7M27 25c1-1 3-2 4-2" fill="none" stroke="#ffd08a" stroke-width="2"/><g fill="#fff" stroke="none" opacity=".8"><circle cx="38" cy="30" r=".9"/><circle cx="26" cy="33" r=".9"/><circle cx="47" cy="36" r=".9"/></g>',
   // views
   v_none: SH + '<path d="M8 16l14-5 20 6 14-5v38l-14 5-20-6-14 5z" fill="#eef7e9"/><path d="M22 11v38M42 17v38" fill="none" stroke-width="1.8"/><path d="M8 38c6-3 10 2 14-1M42 30c5-2 9 1 14-2" fill="none" stroke="#4fc3f7" stroke-width="2.4"/><path d="M32 41s-9-8-9-15a9 9 0 0 1 18 0c0 7-9 15-9 15z" fill="#e5483d"/><circle cx="32" cy="26" r="3.2" fill="#fff"/>',
   v_sea: '<circle cx="44" cy="19" r="8" fill="#ffca28"/><path d="M52 10l3-3M56 19h4M36 10l-3-3" fill="none" stroke-width="2"/><path d="M5 34c5-4 9 4 14 0s9 4 14 0 9 4 14 0 9 4 12 2v18H5z" fill="#3fa9f5"/><path d="M5 45c5-3 9 3 14 0s9 3 14 0 9 3 14 0 9 3 12 1" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M14 29l6-9 2 9z" fill="#fff"/>',
@@ -532,8 +582,14 @@ function chip(label, pressed, onClick) {
   b.setAttribute("aria-pressed", String(pressed)); b.addEventListener("click", onClick); return b;
 }
 function renderControls() {
+  const cc = $("foodCats"); cc.replaceChildren();
+  CATEGORIES.forEach(c => {
+    const n = c.foods ? c.foods.filter(id => S.foods.includes(id)).length : 0;
+    const b = chip(c.ko + (n ? " " + n : ""), (S.foodCat || "all") === c.id, () => { S.foodCat = c.id; save(); renderControls(); });
+    b.setAttribute("role", "tab"); cc.append(b);
+  });
   const fc = $("foodChips"); fc.replaceChildren();
-  FOODS.forEach(f => {
+  catFoods(S.foodCat || "all").forEach(f => {
     const b = el("button", "pick"); b.type = "button"; b.setAttribute("aria-pressed", String(S.foods.includes(f.id)));
     const art = el("span", "art"); art.innerHTML = iconSvg(f.id);
     b.append(art, el("span", "lbl", f.ko), el("span", "ok", "✓"));
@@ -834,6 +890,23 @@ const FOOD_SEARCH = {
   gyudon: { ko: "규동" },
   shabu: { ko: "샤브샤브" },
   dessert: { ko: "디저트", types: ["dessert_shop", "bakery", "ice_cream_shop"], must: ["dessert_shop", "dessert_restaurant", "bakery", "ice_cream_shop", "cafe", "coffee_shop", "confectionery", "cake_shop", "donut_shop", "chocolate_shop", "tea_house"] },
+  bakery: { ko: "빵집 베이커리", types: ["bakery"], must: ["bakery", "cafe", "coffee_shop", "dessert_shop", "confectionery", "cake_shop", "donut_shop", "sandwich_shop"] },
+  samgyeop: { ko: "삼겹살", types: ["barbecue_restaurant"] },
+  steak: { ko: "스테이크", types: ["steak_house"] },
+  chicken: { ko: "치킨" },
+  gukbap: { ko: "국밥" },
+  bibimbap: { ko: "비빔밥" },
+  tteok: { ko: "떡볶이 분식" },
+  jjajang: { ko: "짜장면 중국집", types: ["chinese_restaurant"] },
+  jjamppong: { ko: "짬뽕 중국집", types: ["chinese_restaurant"] },
+  mala: { ko: "마라탕" },
+  dimsum: { ko: "딤섬 샤오롱바오" },
+  pasta: { ko: "파스타", types: ["italian_restaurant"] },
+  pizza: { ko: "피자", types: ["pizza_restaurant"] },
+  burger: { ko: "햄버거 수제버거", types: ["hamburger_restaurant"] },
+  pho: { ko: "쌀국수", types: ["vietnamese_restaurant"] },
+  curry: { ko: "카레" },
+  padthai: { ko: "팟타이 태국음식", types: ["thai_restaurant"] },
   cafe: { ko: "카페", types: ["cafe", "coffee_shop"], must: ["cafe", "coffee_shop", "tea_house", "cat_cafe", "dog_cafe", "bakery", "dessert_shop"] },
 };
 // Name keywords (ko/ja/en) that mark a real match, and cuisine types that are fine to see for that food.
@@ -851,6 +924,22 @@ const FOOD_MATCH = {
   yakitori: { kw: ["야키토리", "꼬치", "쿠시", "焼き鳥", "焼鳥", "やきとり", "串", "yakitori"], ok: ["japanese_restaurant", "bar", "pub", "izakaya_restaurant"] },
   kaisen: { kw: ["해산물", "회덮밥", "횟집", "수산", "海鮮", "刺身", "魚", "seafood", "카이센"], ok: ["japanese_restaurant", "korean_restaurant", "sushi_restaurant"] },
   gyudon: { kw: ["규동", "牛丼", "덮밥", "돈부리", "丼", "gyudon", "すき家", "吉野家", "松屋"], ok: ["japanese_restaurant", "fast_food_restaurant"] },
+  samgyeop: { kw: ["삼겹", "고기", "돼지", "목살", "구이", "サムギョプサル", "豚", "samgyeop"], ok: ["korean_restaurant", "barbecue_restaurant", "korean_barbecue_restaurant"] },
+  steak: { kw: ["스테이크", "ステーキ", "steak", "비프", "beef", "그릴", "grill"], ok: ["american_restaurant", "western_restaurant", "italian_restaurant", "french_restaurant", "barbecue_restaurant", "fine_dining_restaurant"] },
+  chicken: { kw: ["치킨", "통닭", "닭강정", "chicken", "チキン", "唐揚げ", "からあげ", "とり"], ok: ["korean_restaurant", "fast_food_restaurant", "chicken_restaurant", "chicken_wings_restaurant", "japanese_restaurant", "bar", "pub"] },
+  gukbap: { kw: ["국밥", "순대", "해장", "곰탕", "설렁탕", "수육", "クッパ", "gukbap"], ok: ["korean_restaurant"] },
+  bibimbap: { kw: ["비빔밥", "돌솥", "ビビンバ", "bibimbap", "한식", "백반"], ok: ["korean_restaurant"] },
+  tteok: { kw: ["떡볶이", "분식", "김밥", "トッポギ", "tteok"], ok: ["korean_restaurant", "fast_food_restaurant", "snack_bar"] },
+  jjajang: { kw: ["짜장", "자장", "중국", "중화", "반점", "각", "ジャージャー", "中華"], ok: ["chinese_restaurant", "korean_restaurant"] },
+  jjamppong: { kw: ["짬뽕", "중국", "중화", "반점", "ちゃんぽん", "チャンポン", "中華"], ok: ["chinese_restaurant", "korean_restaurant", "japanese_restaurant"] },
+  mala: { kw: ["마라", "麻辣", "훠궈", "火鍋", "mala"], ok: ["chinese_restaurant", "hot_pot_restaurant"] },
+  dimsum: { kw: ["딤섬", "샤오롱", "소룡포", "点心", "飲茶", "小籠包", "dim sum", "dimsum"], ok: ["chinese_restaurant"] },
+  pasta: { kw: ["파스타", "이탈리", "パスタ", "イタリア", "pasta", "trattoria", "osteria"], ok: ["italian_restaurant", "western_restaurant", "european_restaurant"] },
+  pizza: { kw: ["피자", "ピザ", "pizza", "pizzeria"], ok: ["italian_restaurant", "fast_food_restaurant"] },
+  burger: { kw: ["버거", "バーガー", "burger"], ok: ["american_restaurant", "fast_food_restaurant"] },
+  pho: { kw: ["쌀국수", "베트남", "포", "フォー", "ベトナム", "pho", "vietnam"], ok: ["vietnamese_restaurant", "asian_restaurant"] },
+  curry: { kw: ["카레", "커리", "인도", "カレー", "curry", "インド"], ok: ["indian_restaurant", "japanese_restaurant", "nepalese_restaurant", "asian_restaurant"] },
+  padthai: { kw: ["팟타이", "태국", "타이", "パッタイ", "タイ", "thai"], ok: ["thai_restaurant", "asian_restaurant"] },
   shabu: { kw: ["샤브", "しゃぶ", "스키야키", "すき焼", "鍋", "shabu"], ok: ["japanese_restaurant", "korean_restaurant", "hot_pot_restaurant"] },
 };
 const GENERIC_TYPES = ["restaurant", "food", "point_of_interest", "establishment", "meal_takeaway", "meal_delivery", "store", "food_store", "asian_restaurant"];
@@ -967,6 +1056,13 @@ function demoData() {
     ["(예시) 이자카야 토리마루", "izakaya", 3.7, 77, "MODERATE", -150, -200, ["하이볼 저렴"]],
     ["(예시) 장어덮밥 키쿠", "unagi", 4.5, 530, "EXPENSIVE", 900, 300, ["장어가 두툼"]],
     ["(예시) 리버사이드 카페", "cafe", 4.0, 340, "MODERATE", -400, -650, ["川沿いのテラス席が気持ちいい"]],
+    ["(예시) 나폴리 화덕피자", "pizza", 4.3, 410, "MODERATE", 350, 200, []],
+    ["(예시) 트라토리아 파스타", "pasta", 4.2, 260, "MODERATE", -500, 150, []],
+    ["(예시) 수제버거 스탠드", "burger", 4.1, 520, "INEXPENSIVE", 120, -380, []],
+    ["(예시) 홍콩 딤섬하우스", "dimsum", 4.4, 300, "MODERATE", 650, 420, []],
+    ["(예시) 마라탕 전문점", "mala", 3.9, 140, "INEXPENSIVE", -220, 560, []],
+    ["(예시) 한국식 삼겹살집", "samgyeop", 4.2, 190, "MODERATE", 800, -200, []],
+    ["(예시) 베이커리 무기", "bakery", 4.5, 380, "INEXPENSIVE", -100, 300, []],
   ];
   const sel = new Set(S.foods), custom = S.custom.trim();
   const days = ["월요일: 11:00~22:00", "화요일: 11:00~22:00", "수요일: 정기휴무", "목요일: 11:00~22:00", "금요일: 11:00~23:00", "토요일: 10:00~23:00", "일요일: 10:00~21:00"];
@@ -1081,7 +1177,7 @@ $("bestBtn").addEventListener("click", async () => {
 
 // Random pick as a roulette: food icons flip fast, slow down and land on one, then that food is searched.
 // If the landed food has nothing nearby, it spins again (up to 4 foods in total).
-let randomLabel = "";
+let randomLabel = "", rouletteFoods = FOODS;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch {} };
@@ -1104,7 +1200,8 @@ async function spinTo(target) {
   const steps = reduceMotion ? 6 : 26;
   let prev = null;
   for (let i = 0; i < steps; i++) {
-    let f; do { f = FOODS[Math.floor(Math.random() * FOODS.length)]; } while (f === prev || f.id === target.id);
+    const src = rouletteFoods.length > 2 ? rouletteFoods : FOODS;
+    let f; do { f = src[Math.floor(Math.random() * src.length)]; } while (f === prev || f.id === target.id);
     prev = f; showFood(f, "tick"); buzz(4);
     const t = i / steps;
     await sleep(reduceMotion ? 120 : 38 + Math.pow(t, 3) * 300);
@@ -1118,7 +1215,10 @@ $("randBtn").addEventListener("click", async () => {
   const btn = $("randBtn"); if (btn.disabled) return;
   btn.disabled = true;
   const last = store.get("lastRandom", null);
-  const pool = FOODS.filter(f => f.id !== last).sort(() => Math.random() - 0.5).slice(0, 4);
+  const base = catFoods(S.foodCat || "all");
+  const pool = base.filter(f => f.id !== last || base.length === 1).sort(() => Math.random() - 0.5).slice(0, 4);
+  rouletteFoods = base;
+  $("rlTop").textContent = (S.foodCat && S.foodCat !== "all" ? CATEGORIES.find(c => c.id === S.foodCat).ko + " 중에서 " : "") + "오늘 뭐 먹지?";
   $("rlSub").textContent = ""; $("rlName").textContent = ""; $("rlArt").replaceChildren();
   $("roulette").hidden = false;
   let found = 0;
