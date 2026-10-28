@@ -49,7 +49,18 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .top h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.8px; line-height: 1.15; }
 .top p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-.avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--ink); color: var(--inv); display: grid; place-items: center; font-family: var(--jp); font-size: 16px; flex: none; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; background: var(--soft) center/cover no-repeat; border: 1px solid var(--line); color: var(--muted); }
+.avatar svg { width: 26px; height: 26px; }
+.avatar.has svg { display: none; }
+.pf { display: grid; justify-items: center; gap: 14px; margin-block: 6px 4px; }
+.pf .big { width: 96px; height: 96px; border-radius: 50%; background: var(--soft) center/cover no-repeat; border: 1px solid var(--line); display: grid; place-items: center; color: var(--muted); position: relative; }
+.pf .big svg { width: 48px; height: 48px; }
+.pf .big.has > svg { display: none; }
+.pf .cam { position: absolute; right: -2px; bottom: -2px; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--inv); display: grid; place-items: center; border: 2px solid var(--surface); }
+.pf .cam svg { width: 15px; height: 15px; display: block; }
+.pf-links { display: flex; gap: 14px; font-size: 13px; font-weight: 700; }
+.pf-links button { text-decoration: underline; text-underline-offset: 3px; }
+.pf-links .rm { color: var(--muted); }
 
 .search { display: flex; gap: 10px; }
 .field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; background: var(--surface); }
@@ -218,14 +229,16 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="8" cy="17" r="1.6"/></symbol>
   <symbol id="i-nav" viewBox="0 0 24 24"><path d="M4 11 20 4l-7 16-2-7z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.2-4 4.2-6 7.5-6s6.3 2 7.5 6"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
   <symbol id="i-msg" viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z"/></symbol>
 </svg>
 
 <!-- ===== Tab: 찾기 ===== -->
 <main class="wrap" id="view-find">
   <div class="top">
-    <div><h1>지금 뭐 먹지</h1><p>땡기는 음식을 고르면 주변 최적의 가게를 찾아드려요</p></div>
-    <div class="avatar" aria-hidden="true">食</div>
+    <div><h1>지금 뭐 먹지</h1><p id="greet">땡기는 음식을 고르면 주변 최적의 가게를 찾아드려요</p></div>
+    <button class="avatar" type="button" id="avatarBtn" aria-label="프로필 설정"><svg class="i"><use href="#i-person"/></svg></button>
   </div>
 
   <div class="search">
@@ -345,6 +358,23 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     <a class="btn solid" id="dGo" target="_blank" rel="noopener"><svg class="i"><use href="#i-nav"/></svg>길찾기</a>
   </div></div>
 </section>
+
+<dialog id="profile">
+  <form method="dialog" id="profileForm">
+    <h3>프로필</h3>
+    <div class="pf">
+      <label class="big" id="pfPhoto" for="pfFile" aria-label="사진 선택"><svg class="i"><use href="#i-person"/></svg><span class="cam"><svg class="i"><use href="#i-camera"/></svg></span></label>
+      <input type="file" id="pfFile" accept="image/*" hidden>
+      <div class="pf-links"><button type="button" id="pfPick">사진 바꾸기</button><button type="button" class="rm" id="pfRemove">사진 삭제</button></div>
+    </div>
+    <label class="field"><input type="text" id="pfName" placeholder="닉네임 (예: 민건)" maxlength="12" autocomplete="nickname"></label>
+    <p class="hint" style="margin-top:8px">사진과 닉네임은 이 휴대폰 브라우저에만 저장돼요.</p>
+    <div class="btns">
+      <button class="btn" value="cancel" type="submit">닫기</button>
+      <button class="btn solid" value="save" type="submit">저장</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="settings">
   <form method="dialog">
@@ -530,6 +560,48 @@ $("settings").addEventListener("close", () => {
     if (k && k !== apiKey) { store.set("apiKey", k); location.reload(); }
     if (!k && apiKey) { store.set("apiKey", ""); location.reload(); }
   } else if (v === "demo") { demo = true; renderControls(); showTab("find"); }
+});
+
+// ---------- profile ----------
+let pfDraft = null;   // photo picked in the dialog but not saved yet
+function paintAvatar(node, photo) { node.style.backgroundImage = photo ? "url(\"" + photo + "\")" : ""; node.classList.toggle("has", !!photo); }
+function renderProfile() {
+  const pf = store.get("profile", {});
+  paintAvatar($("avatarBtn"), pf.photo);
+  $("greet").textContent = pf.name ? pf.name + "님, 오늘은 뭐가 땡겨요?" : "땡기는 음식을 고르면 주변 최적의 가게를 찾아드려요";
+}
+function shrinkImage(file) {
+  // Square-crop and shrink to 240px JPEG so it fits comfortably in local storage
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const n = 240, c = document.createElement("canvas"); c.width = c.height = n;
+      const side = Math.min(img.width, img.height);
+      c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, n, n);
+      URL.revokeObjectURL(url); resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("이미지를 읽지 못했어요")); };
+    img.src = url;
+  });
+}
+$("avatarBtn").addEventListener("click", () => {
+  const pf = store.get("profile", {});
+  pfDraft = pf.photo || "";
+  paintAvatar($("pfPhoto"), pfDraft);
+  $("pfName").value = pf.name || "";
+  $("profile").showModal();
+});
+$("pfPick").addEventListener("click", () => $("pfFile").click());
+$("pfFile").addEventListener("change", async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  try { pfDraft = await shrinkImage(f); paintAvatar($("pfPhoto"), pfDraft); } catch (err) { console.warn(err); }
+  e.target.value = "";
+});
+$("pfRemove").addEventListener("click", () => { pfDraft = ""; paintAvatar($("pfPhoto"), ""); });
+$("profile").addEventListener("close", () => {
+  if ($("profile").returnValue !== "save") return;
+  store.set("profile", { name: $("pfName").value.trim(), photo: pfDraft || "" });
+  renderProfile();
 });
 
 // ---------- tabs ----------
@@ -1037,6 +1109,7 @@ $("dSave").addEventListener("click", () => { if (!current) return; toggleSave(cu
 const prev = store.get("lastHere", null);
 if (prev) { here = prev; $("locText").textContent = "마지막 위치 · " + prev.label; $("locDot").classList.add("on"); }
 renderControls();
+renderProfile();
 if (apiKey) loadGoogle(apiKey).catch(err => setStatus(err.message, true));
 </script>
 </body>
