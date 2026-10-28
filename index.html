@@ -264,10 +264,6 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     <div class="foodgrid" id="foodChips"></div>
   </section>
 
-  <section class="sec" aria-labelledby="h-view">
-    <div class="sec-head"><h2 id="h-view">전망</h2><span class="aux">리뷰 기반 추정</span></div>
-    <div class="viewgrid" id="viewChips"></div>
-  </section>
 
   <div class="status" id="status" role="status"></div>
 
@@ -308,7 +304,6 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
       <div class="row"><div class="row-head"><label for="minReviews">최소 리뷰 수</label><output id="minReviewsOut"></output></div><input type="range" id="minReviews" min="0" max="500" step="10" value="30"></div>
       <div class="row"><div class="row-head"><span>가격대</span></div><div class="chips" id="priceChips"></div></div>
       <div class="row"><label class="switch">지금 영업 중인 곳만<input type="checkbox" id="openNow" checked></label></div>
-      <div class="row"><label class="switch">전망 언급이 있는 곳만 보기<input type="checkbox" id="viewStrict"></label><p class="hint">전망을 고른 경우에만 적용돼요. 가게 이름과 구글 리뷰에서 ‘海が見える’, ‘夜景’, ‘ocean view’ 같은 표현을 찾아요.</p></div>
       <div class="row"><div class="row-head"><span>정렬</span></div><div class="chips" id="sortChips"></div></div>
     </div>
   </section>
@@ -472,6 +467,7 @@ const store = {
 const DEFAULTS = { foods: ["sushi"], custom: "", radius: 1000, minRating: 3.8, minReviews: 30, prices: [], openNow: true, view: "none", viewStrict: false, sort: "best" };
 let S = Object.assign({}, DEFAULTS, store.get("settings", {}));
 S.foods = S.foods.filter(id => FOODS.some(f => f.id === id));
+S.view = "none"; S.viewStrict = false;   // view filter was removed from the UI
 let apiKey = store.get("apiKey", "");
 let demo = !apiKey;
 let here = null;
@@ -496,29 +492,20 @@ function renderControls() {
     b.addEventListener("click", () => { S.foods = S.foods.includes(f.id) ? S.foods.filter(x => x !== f.id) : [...S.foods, f.id]; save(); renderControls(); });
     fc.append(b);
   });
-  const vc = $("viewChips"); vc.replaceChildren();
-  VIEWS.forEach(v => {
-    const b = el("button", "pick"); b.type = "button"; b.setAttribute("aria-pressed", String(S.view === v.id));
-    const art = el("span", "art"); art.innerHTML = iconSvg("v_" + v.id);
-    b.append(art, el("span", "lbl", v.ko.replace("·", "\n").split("\n")[0]), el("span", "ok", "✓"));
-    b.title = v.ko;
-    b.addEventListener("click", () => { S.view = v.id; save(); renderControls(); });
-    vc.append(b);
-  });
   const pc = $("priceChips"); pc.replaceChildren();
   PRICES.forEach(p => pc.append(chip(p.ko, S.prices.includes(p.id), () => { S.prices = S.prices.includes(p.id) ? S.prices.filter(x => x !== p.id) : [...S.prices, p.id]; save(); renderControls(); })));
   const sc = $("sortChips"); sc.replaceChildren();
   SORTS.forEach(o => sc.append(chip(o.ko, S.sort === o.id, () => { S.sort = o.id; save(); renderControls(); if (lastResults.length) renderResults(); })));
   $("customFood").value = S.custom;
   $("radius").value = S.radius; $("minRating").value = S.minRating; $("minReviews").value = S.minReviews;
-  $("openNow").checked = S.openNow; $("viewStrict").checked = S.viewStrict;
+  $("openNow").checked = S.openNow;
   $("radiusOut").textContent = fmtDist(S.radius) + " · 도보 약 " + Math.round(S.radius / 80) + "분";
   $("minRatingOut").textContent = S.minRating > 0 ? "★ " + Number(S.minRating).toFixed(1) + " 이상" : "상관없음";
   $("minReviewsOut").textContent = S.minReviews > 0 ? S.minReviews + "개 이상" : "상관없음";
   $("demoFlag").hidden = !demo;
   $("keyState").textContent = apiKey ? "등록됨" : (demo ? "체험 모드" : "");
   $("openSettings").textContent = apiKey ? "API 키 변경" : "API 키 설정";
-  const changed = ["radius", "minRating", "minReviews", "openNow", "viewStrict", "sort"].filter(k => S[k] !== DEFAULTS[k]).length + (S.prices.length ? 1 : 0);
+  const changed = ["radius", "minRating", "minReviews", "openNow", "sort"].filter(k => S[k] !== DEFAULTS[k]).length + (S.prices.length ? 1 : 0);
   $("filterN").hidden = !changed; $("filterN").textContent = changed;
   renderPresets();
 }
@@ -526,7 +513,6 @@ function save() { store.set("settings", S); }
 
 ["radius", "minRating", "minReviews"].forEach(id => $(id).addEventListener("input", e => { S[id] = Number(e.target.value); save(); renderControls(); }));
 $("openNow").addEventListener("change", e => { S.openNow = e.target.checked; save(); renderControls(); });
-$("viewStrict").addEventListener("change", e => { S.viewStrict = e.target.checked; save(); renderControls(); });
 $("customFood").addEventListener("input", e => { S.custom = e.target.value; save(); });
 $("customFood").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); search(); } });
 $("clearFood").addEventListener("click", () => { S.foods = []; S.custom = ""; save(); renderControls(); });
