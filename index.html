@@ -147,6 +147,8 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; app
 .go { width: 100%; padding-block: 15px; font-size: 15px; border-radius: 14px; }
 .go svg { width: 18px; height: 18px; }
 .go:disabled { opacity: .55; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -6px; }
+.duo .go { padding-block: 13px; }
 .go-hint { margin: -10px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
 
 .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
@@ -233,6 +235,7 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="8" cy="17" r="1.6"/></symbol>
   <symbol id="i-nav" viewBox="0 0 24 24"><path d="M4 11 20 4l-7 16-2-7z"/></symbol>
+  <symbol id="i-dice" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.1" fill="currentColor"/><circle cx="15" cy="15" r="1.1" fill="currentColor"/><circle cx="15" cy="9" r="1.1" fill="currentColor"/><circle cx="9" cy="15" r="1.1" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/></symbol>
   <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.2-4 4.2-6 7.5-6s6.3 2 7.5 6"/></symbol>
   <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
   <symbol id="i-msg" viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z"/></symbol>
@@ -270,6 +273,11 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
 
   <button class="btn solid go" id="searchBtn" type="button"><svg class="i"><use href="#i-search"/></svg><span id="searchLbl">검색하기</span></button>
   <p class="go-hint">현재 위치에서 도보 30분 이내 가게만 찾아요</p>
+
+  <div class="duo">
+    <button class="btn go" id="randBtn" type="button"><svg class="i"><use href="#i-dice"/></svg><span id="randLbl">랜덤음식</span></button>
+    <button class="btn go" id="bestBtn" type="button"><svg class="i"><use href="#i-star"/></svg><span id="bestLbl">추천맛집</span></button>
+  </div>
 
   <div class="status" id="status" role="status"></div>
 
@@ -481,6 +489,7 @@ let demo = !apiKey;
 let here = null;
 let lastResults = [];
 let pickedId = null;
+let searchMode = "food";   // "food" = chosen foods, "best" = top-rated restaurants of any kind
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -506,7 +515,7 @@ function renderControls() {
     const sc = $(id); sc.replaceChildren();
     SORTS.forEach(o => sc.append(chip(o.ko, S.sort === o.id, () => setSort(o.id))));
   });
-  $("h-feat").textContent = S.sort === "near" ? "가장 가까운 곳" : S.sort === "rating" ? "별점 최고" : "추천";
+  renderHeading();
   $("customFood").value = S.custom;
   $("minRating").value = S.minRating; $("minReviews").value = S.minReviews;
   $("openNow").checked = S.openNow;
@@ -520,6 +529,9 @@ function renderControls() {
   renderPresets();
 }
 function save() { store.set("settings", S); }
+function renderHeading() {
+  $("h-feat").textContent = S.sort === "near" ? "가장 가까운 곳" : S.sort === "rating" ? "별점 최고" : searchMode === "best" ? "주변 추천 맛집" : "추천";
+}
 function setSort(id) {
   const refetch = (id === "near") !== (S.sort === "near");   // 가까운순 asks Google for the nearest places, so search again
   S.sort = id; save(); renderControls();
@@ -634,7 +646,7 @@ function setHere(lat, lng, label) {
   $("locDot").classList.add("on"); $("locText").textContent = label;
   store.set("lastHere", here);
 }
-function foodIcon(p) { const f = FOODS.find(f => f.id === p.foodId) || FOODS.find(f => S.foods.includes(f.id)); return iconSvg(f ? f.id : "v_none"); }
+function foodIcon(p) { const f = FOODS.find(f => f.id === p.foodId) || (p.foodId === undefined ? FOODS.find(f => S.foods.includes(f.id)) : null); return iconSvg(f ? f.id : "v_none"); }
 function fillImg(node, p) {
   node.classList.toggle("noimg", !p.photo);
   if (p.photo) node.style.backgroundImage = "url(\"" + p.photo + "\")";
@@ -824,6 +836,7 @@ function matchFood(place, foodId) {
 }
 function buildQueries() {
   const kr = isKorea(here), qs = [];
+  if (searchMode === "best") return [{ kind: "nearby", types: ["restaurant"], foodId: null }, { kind: "text", q: kr ? "맛집" : "人気 グルメ", foodId: null }];
   FOODS.filter(f => S.foods.includes(f.id)).forEach(f => {
     const cfg = FOOD_SEARCH[f.id] || {};
     qs.push({ kind: "text", q: kr && cfg.ko ? cfg.ko : f.q, foodId: f.id });
@@ -890,7 +903,8 @@ async function fetchGoogle(queries) {
     if (p.businessStatus && p.businessStatus !== "OPERATIONAL") continue;
     // judge the place against every chosen food and keep the best fit
     let rel = 0, foodId = null;
-    picked.forEach(f => { const r = matchFood(p, f); if (r > rel) { rel = r; foodId = f; } });
+    if (searchMode === "best") { rel = 2; foodId = FOODS.map(f => f.id).find(id => matchFood(p, id) === 2) || null; }
+    else picked.forEach(f => { const r = matchFood(p, f); if (r > rel) { rel = r; foodId = f; } });
     if (!rel) continue;
     let open;
     try { open = await p.isOpen(); } catch { open = undefined; }
@@ -925,7 +939,7 @@ function demoData() {
   ];
   const sel = new Set(S.foods), custom = S.custom.trim();
   const days = ["월요일: 11:00~22:00", "화요일: 11:00~22:00", "수요일: 정기휴무", "목요일: 11:00~22:00", "금요일: 11:00~23:00", "토요일: 10:00~23:00", "일요일: 10:00~21:00"];
-  return rows.filter(r => sel.has(r[1]) || (custom && r[0].includes(custom))).map((r, i) => ({
+  return rows.filter(r => searchMode === "best" || sel.has(r[1]) || (custom && r[0].includes(custom))).map((r, i) => ({
     id: "demo" + i, foodId: r[1], rel: 2, name: r[0],
     lat: base.lat + r[5] / 111320, lng: base.lng + r[6] / (111320 * Math.cos(base.lat * Math.PI / 180)),
     rating: r[2], reviews: r[3], price: r[4], address: "大阪市中央区 (예시 주소)", type: FOODS.find(f => f.id === r[1]).ko + " 전문점",
@@ -933,11 +947,11 @@ function demoData() {
   }));
 }
 
-async function search() {
-  if (!S.foods.length && !S.custom.trim()) { setStatus("먹고 싶은 음식을 하나 이상 골라 주세요.", true); return; }
+async function search(opts = {}) {
+  if (searchMode === "food" && !S.foods.length && !S.custom.trim()) { setStatus("먹고 싶은 음식을 하나 이상 골라 주세요.", true); return -1; }
   if (!here) {
     if (demo) setHere(34.6687, 135.5013, "난바역 (체험 모드 기본 위치)");
-    else { setStatus("먼저 ‘현재 위치’를 누르거나 위 검색창에 역·지명을 입력해 주세요.", true); return; }
+    else { setStatus("먼저 ‘현재 위치’를 누르거나 위 검색창에 역·지명을 입력해 주세요.", true); return -1; }
   }
   $("searchBtn").disabled = true; $("searchLbl").textContent = "찾는 중…";
   setStatus("");
@@ -954,19 +968,22 @@ async function search() {
     lastResults = list; pickedId = null;
     if (!list.length) {
       renderResults();
+      if (opts.quiet) return 0;
       const e = $("emptyHint");
       e.textContent = nearby.length
         ? "도보 " + WALK_MIN + "분 안에 " + nearby.length + "곳이 있지만 지금 영업 중이 아니거나 가격대 조건에 맞지 않아요."
         : "주위에 관련 음식점이 없습니다.";
       e.hidden = false;
       e.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else {
-      setStatus("");
-      renderResults();
-      $("featSec").scrollIntoView({ behavior: "smooth", block: "start" });
+      return 0;
     }
+    setStatus("");
+    renderResults();
+    $("featSec").scrollIntoView({ behavior: "smooth", block: "start" });
+    return list.length;
   } catch (err) {
     setStatus(err.message || "검색 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.", true);
+    return -1;
   } finally { $("searchBtn").disabled = false; $("searchLbl").textContent = "검색하기"; }
 }
 
@@ -989,6 +1006,7 @@ function listItem(p, rank) {
   return b;
 }
 function renderResults() {
+  renderHeading();
   const list = sortList(lastResults);
   $("emptyHint").hidden = !!list.length || !!$("status").textContent;
   $("featSec").hidden = !list.length; $("listSec").hidden = list.length < 2; $("sortBar").hidden = !list.length;
@@ -997,7 +1015,7 @@ function renderResults() {
   const f = $("feature"); f.replaceChildren();
   const card = el("button", "feature"); card.type = "button";
   const ph = el("div", "ph"); fillImg(ph, lead);
-  ph.append(el("span", "tag", pickedId ? "오늘은 여기" : "도보 " + walkMin(lead.dist) + "분"));
+  ph.append(el("span", "tag", pickedId ? "오늘은 여기" : searchMode === "best" ? "추천 맛집" : randomLabel ? "랜덤 · " + randomLabel : "도보 " + walkMin(lead.dist) + "분"));
   const body = el("div", "body");
   const title = el("div", "title"); title.append(el("span", null, lead.name), icon("chev"));
   body.append(title, el("div", "sub", (lead.type ? lead.type + " · " : "") + (lead.address || "")));
@@ -1021,7 +1039,35 @@ function renderResults() {
   $("listSec").hidden = !rest.length;
 }
 
-$("searchBtn").addEventListener("click", search);
+$("searchBtn").addEventListener("click", () => { randomLabel = ""; searchMode = "food"; search(); });
+$("bestBtn").addEventListener("click", async () => {
+  const btn = $("bestBtn"); if (btn.disabled) return;
+  btn.disabled = true; $("bestLbl").textContent = "찾는 중…";
+  randomLabel = ""; searchMode = "best";
+  await search();
+  btn.disabled = false; $("bestLbl").textContent = "추천맛집";
+});
+
+// Random pick: choose a food at random, search it, and show its best place.
+// If that food has nothing nearby, quietly try another (up to 4 foods).
+let randomLabel = "";
+$("randBtn").addEventListener("click", async () => {
+  const btn = $("randBtn"); if (btn.disabled) return;
+  btn.disabled = true;
+  const last = store.get("lastRandom", null);
+  const pool = FOODS.map(f => f.id).filter(id => id !== last).sort(() => Math.random() - 0.5).slice(0, 4);
+  let found = 0;
+  for (let i = 0; i < pool.length; i++) {
+    const f = FOODS.find(x => x.id === pool[i]);
+    S.foods = [f.id]; S.custom = ""; save(); renderControls();
+    randomLabel = f.ko; searchMode = "food";
+    $("randLbl").textContent = f.ko + " 찾는 중…";
+    found = await search({ quiet: i < pool.length - 1 });
+    if (found) { store.set("lastRandom", f.id); break; }
+  }
+  if (found <= 0) randomLabel = "";
+  btn.disabled = false; $("randLbl").textContent = "랜덤음식";
+});
 $("pickBtn").addEventListener("click", () => {
   const ranked = sortList(lastResults), okOnes = ranked.filter(p => !p.below);
   const top = (okOnes.length ? okOnes : ranked).slice(0, 5);
