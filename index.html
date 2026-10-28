@@ -268,7 +268,7 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   </section>
 
   <button class="btn solid go" id="searchBtn" type="button"><svg class="i"><use href="#i-search"/></svg><span id="searchLbl">검색하기</span></button>
-  <p class="go-hint">현재 위치에서 도보 10분 이내 가게만 찾아요</p>
+  <p class="go-hint">현재 위치에서 도보 30분 이내 가게만 찾아요</p>
 
   <div class="status" id="status" role="status"></div>
 
@@ -468,7 +468,7 @@ const store = {
   set(k, v) { try { localStorage.setItem("jff." + k, JSON.stringify(v)); } catch {} },
 };
 const MIN_CHOICES = 10;   // show at least this many places when the area has them
-const WALK_MIN = 10, WALK_M_PER_MIN = 80, RADIUS = WALK_MIN * WALK_M_PER_MIN;   // max 10 minutes on foot ≈ 800m
+const WALK_MIN = 30, WALK_M_PER_MIN = 80, RADIUS = WALK_MIN * WALK_M_PER_MIN;   // max 30 minutes on foot ≈ 2.4km
 const DEFAULTS = { foods: ["sushi"], custom: "", radius: 1000, minRating: 3.8, minReviews: 30, prices: [], openNow: true, view: "none", viewStrict: false, sort: "best" };
 let S = Object.assign({}, DEFAULTS, store.get("settings", {}));
 S.foods = S.foods.filter(id => FOODS.some(f => f.id === id));
@@ -910,7 +910,7 @@ async function search() {
       renderResults();
       const e = $("emptyHint");
       e.textContent = nearby.length
-        ? "도보 10분 안에 " + nearby.length + "곳이 있지만 지금 영업 중이 아니거나 가격대 조건에 맞지 않아요."
+        ? "도보 " + WALK_MIN + "분 안에 " + nearby.length + "곳이 있지만 지금 영업 중이 아니거나 가격대 조건에 맞지 않아요."
         : "주위에 관련 음식점이 없습니다.";
       e.hidden = false;
       e.scrollIntoView({ behavior: "smooth", block: "center" });
