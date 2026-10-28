@@ -83,14 +83,23 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; app
 .sec-head .aux { font-size: 13px; color: var(--muted); font-weight: 600; }
 .sec-head button.aux { text-decoration: underline; text-underline-offset: 3px; }
 
-.scroller { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -20px; padding-inline: 20px; padding-block: 2px; }
-.scroller::-webkit-scrollbar { display: none; }
-.pick { flex: none; display: grid; justify-items: center; gap: 6px; width: 68px; }
-.pick .art { width: 60px; height: 60px; border-radius: 16px; border: 1px solid var(--line); background: var(--soft); display: grid; place-items: center; font-family: var(--jp); font-size: 17px; color: var(--ink); }
-.pick .lbl { font-size: 12px; font-weight: 600; color: var(--ink-2); text-align: center; line-height: 1.2; }
-.pick[aria-pressed=true] .art { background: var(--ink); color: var(--inv); border-color: var(--ink); }
+.foodgrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px 4px; }
+.viewgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 4px; }
+.pick { display: grid; justify-items: center; gap: 4px; min-width: 0; position: relative; }
+.pick .art { width: 62px; height: 62px; max-width: 100%; border-radius: 18px; display: grid; place-items: center; transition: background .15s, transform .15s; }
+.viewgrid .pick .art { width: 52px; height: 52px; border-radius: 16px; }
+.pick .art svg { width: 82%; height: 82%; }
+.pick .lbl { font-size: 12px; font-weight: 700; color: var(--ink-2); text-align: center; line-height: 1.2; letter-spacing: -0.3px; overflow-wrap: anywhere; }
+.pick[aria-pressed=true] .art { background: var(--soft); box-shadow: inset 0 0 0 2px var(--ink); }
 .pick[aria-pressed=true] .lbl { color: var(--ink); font-weight: 800; }
-
+.pick .ok { position: absolute; top: -3px; right: calc(50% - 34px); width: 18px; height: 18px; border-radius: 50%; background: var(--ink); color: var(--inv); font-size: 11px; font-weight: 800; display: none; place-items: center; }
+.viewgrid .pick .ok { right: calc(50% - 29px); }
+.pick[aria-pressed=true] .ok { display: grid; }
+.pick .ok { box-shadow: 0 0 0 2px var(--bg); }
+@media (prefers-reduced-motion: no-preference) { .pick:active .art { transform: scale(.94); } }
+@media (prefers-color-scheme: dark) { .pick .art { background: #e9e9ec; } .pick[aria-pressed=true] .art { background: #ffffff; box-shadow: 0 0 0 2px var(--ink); } }
+.noimg { background-color: #f1f1f3 !important; }
+.noimg svg.fi { width: 62%; height: 62%; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 700; color: var(--ink-2); background: var(--surface); display: inline-flex; align-items: center; gap: 6px; }
 .chip[aria-pressed=true] { background: var(--ink); border-color: var(--ink); color: var(--inv); }
@@ -239,12 +248,12 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
 
   <section class="sec" aria-labelledby="h-food">
     <div class="sec-head"><h2 id="h-food">음식</h2><button class="aux" type="button" id="clearFood">선택 해제</button></div>
-    <div class="scroller" id="foodChips"></div>
+    <div class="foodgrid" id="foodChips"></div>
   </section>
 
   <section class="sec" aria-labelledby="h-view">
     <div class="sec-head"><h2 id="h-view">전망</h2><span class="aux">리뷰 기반 추정</span></div>
-    <div class="chips" id="viewChips"></div>
+    <div class="viewgrid" id="viewChips"></div>
   </section>
 
   <div class="status" id="status" role="status"></div>
@@ -396,6 +405,35 @@ const SORTS = [
 ];
 const PRICE_LABEL = { FREE: "무료", INEXPENSIVE: "¥", MODERATE: "¥¥", EXPENSIVE: "¥¥¥", VERY_EXPENSIVE: "¥¥¥¥" };
 
+// ---------- illustrated icons (64×64, black outline + flat colour; children inherit the outline stroke) ----------
+const SH = '<ellipse cx="32" cy="57" rx="20" ry="3" fill="#000" opacity=".08" stroke="none"/>';
+const ICONS = {
+  sushi: SH + '<path d="M11 41c0-6 7-9 21-9s21 3 21 9-7 9-21 9-21-3-21-9z" fill="#fff"/><g fill="#f1f1f1" stroke-width="1.1"><ellipse cx="18" cy="44" rx="2.4" ry="1.3" transform="rotate(-20 18 44)"/><ellipse cx="27" cy="47" rx="2.4" ry="1.3" transform="rotate(15 27 47)"/><ellipse cx="37" cy="46" rx="2.4" ry="1.3" transform="rotate(-10 37 46)"/><ellipse cx="46" cy="43" rx="2.4" ry="1.3" transform="rotate(25 46 43)"/></g><path d="M8 34c2-9 13-14 26-14 11 0 20 4 22 10 1 3-1 5-5 5H13c-3 0-5-0-5-1z" fill="#ff8a5b"/><path d="M20 23c3 3 4 7 3 11M30 21c3 3 4 8 3 13M41 22c3 3 4 7 3 12" fill="none" stroke="#ffe3d6" stroke-width="2.4"/><path d="M14 29c2-2 5-3 8-4" fill="none" stroke="#fff" stroke-width="2"/>',
+  yakiniku: '<circle cx="32" cy="35" r="23" fill="#3a3a3c"/><path d="M13 27h38M10 35h44M13 43h38" stroke="#77777d" stroke-width="1.6" fill="none"/><path d="M16 31c4-6 13-7 18-3 2 2 0 6-4 7-6 1-12 1-14-1-1-1-1-2 0-3z" fill="#e2574c"/><path d="M20 31c3-1 7-1 10 0" stroke="#ffd1c9" stroke-width="1.8" fill="none"/><path d="M31 40c4-5 12-5 16-1 2 2 0 5-3 6-6 1-11 1-13-1-1-1-1-3 0-4z" fill="#c8453b"/><path d="M35 41c3-1 6-1 8 0" stroke="#ffd1c9" stroke-width="1.8" fill="none"/><path d="M22 10c-2 2 2 3 0 6M32 7c-2 2 2 4 0 7M42 10c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
+  ramen: '<path d="M44 5 31 28M52 8 35 30" fill="none" stroke-width="3"/><path d="M25 52h14v4H25z" fill="#e5483d"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#e5483d"/><path d="M15 43c3 2 6 2 9 0s6-2 9 0 6 2 9 0" fill="none" stroke="#fff" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#f6c36b"/><path d="M29 33c2-2 4 0 6-2M41 34c2-1 4 0 5-2" fill="none" stroke-width="1.6"/><ellipse cx="22" cy="30.5" rx="6" ry="3.4" fill="#fff"/><ellipse cx="22" cy="30.5" rx="2.8" ry="1.6" fill="#f7a823" stroke="none"/><circle cx="37" cy="29.5" r="3.4" fill="#fff"/><path d="M36.2 29.5c0-1 1.6-1 1.6 0" stroke="#e85a8a" fill="none" stroke-width="1.4"/><path d="M45 29l4-7 4 2-3 7z" fill="#2f3b2f"/>',
+  tonkatsu: '<ellipse cx="32" cy="45" rx="27" ry="10" fill="#fff"/><path d="M8 42c1-7 8-10 14-7 0 5-4 9-9 9-3 0-5-1-5-2z" fill="#9ccc65"/><path d="M11 40c2-1 5-2 8-2" fill="none" stroke-width="1.4"/><g><path d="M23 44l6-19c1-2 3-3 5-2l3 1c2 1 3 3 2 5l-6 18c-1 2-3 3-5 2l-3-1c-2-1-3-2-2-4z" fill="#e3a03c"/><path d="M30 25l-6 18" stroke="#fbe0b5" stroke-width="2"/></g><g transform="translate(10 1)"><path d="M23 44l6-19c1-2 3-3 5-2l3 1c2 1 3 3 2 5l-6 18c-1 2-3 3-5 2l-3-1c-2-1-3-2-2-4z" fill="#e3a03c"/><path d="M30 25l-6 18" stroke="#fbe0b5" stroke-width="2"/></g><g fill="#b9731f" stroke="none"><circle cx="32" cy="30" r="1"/><circle cx="29" cy="38" r="1"/><circle cx="42" cy="32" r="1"/><circle cx="39" cy="40" r="1"/><circle cx="35" cy="35" r="1"/></g><path d="M28 31l4 2-2 3 4 2M38 32l4 2-2 3 4 2" fill="none" stroke="#5a2e14" stroke-width="1.8"/>',
+  izakaya: SH + '<path d="M41 26h6c5 0 8 3 8 8v6c0 5-3 8-8 8h-6v-5h5c2 0 4-1 4-4v-4c0-3-2-4-4-4h-5z" fill="#fff"/><rect x="15" y="21" width="27" height="34" rx="4" fill="#ffc533"/><path d="M21 29v20" stroke="#fff3c4" stroke-width="3"/><g fill="#fff" stroke="none"><circle cx="27" cy="40" r="1.6"/><circle cx="34" cy="47" r="1.3"/><circle cx="36" cy="33" r="1.4"/></g><path d="M12 23c0-5 4-8 8-7 1-4 6-5 9-4 3-3 9-3 11 1 4 0 7 3 6 7-1 3-3 4-6 4H16c-3 0-4-1-4-1z" fill="#fff"/><path d="M20 20c1-1 3-2 5-1" fill="none" stroke-width="1.6"/>',
+  unagi: SH + '<path d="M8 32h48v17c0 4-3 6-6 6H14c-3 0-6-2-6-6z" fill="#b5332e"/><path d="M12 43h40" stroke="#f2c14e" stroke-width="2.2"/><path d="M10 30c1-7 6-10 12-10h8c3 0 4 3 3 6l-1 4z" fill="#7a4a1e"/><path d="M32 30l1-4c1-4 4-6 8-6h6c5 0 8 4 8 10z" fill="#8b5524"/><path d="M16 23l3 6M22 21l3 8M39 22l3 7M46 22l3 7" stroke="#4a2a10" stroke-width="1.6" fill="none"/><path d="M14 25c1-1 3-2 5-2M37 24c1-1 3-2 5-2" stroke="#fff" stroke-width="1.6" fill="none"/><rect x="6" y="29" width="52" height="5" rx="2" fill="#2b2b2b"/><path d="M50 15c2-3 6-3 7-1-1 3-4 4-7 1z" fill="#7cb342"/>',
+  udon: '<path d="M25 52h14v4H25z" fill="#2f3e66"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#2f3e66"/><path d="M14 41c2 3 5 3 7 0M25 45c2 3 5 3 7 0M36 41c2 3 5 3 7 0" fill="none" stroke="#fff" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#f3dfb0"/><path d="M15 31c4 2 8-2 12 0s8 2 12 0 6-1 9 0" stroke-width="5" fill="none"/><path d="M15 31c4 2 8-2 12 0s8 2 12 0 6-1 9 0" stroke="#fff" stroke-width="2.6" fill="none"/><path d="M37 29a4.5 4.5 0 0 1 9 0z" fill="#f48fb1"/><g fill="#7cb342" stroke-width="1.2"><circle cx="22" cy="28" r="1.6"/><circle cx="27" cy="34" r="1.6"/><circle cx="33" cy="27" r="1.6"/></g><path d="M44 5 31 27M52 8 35 29" fill="none" stroke-width="3"/>',
+  tempura: SH + '<path d="M10 47c-2-11 5-23 17-29 9-4 17-3 19 1 2 3-1 6-6 8-8 4-14 11-15 19-1 5-13 6-15 1z" fill="#f0b443"/><path d="M14 44c0-6 3-12 8-16M24 24c3-2 6-3 9-3" fill="none" stroke="#fff3c4" stroke-width="2"/><g fill="#c98a20" stroke="none"><circle cx="18" cy="38" r="1.2"/><circle cx="24" cy="31" r="1.2"/><circle cx="31" cy="26" r="1.2"/><circle cx="20" cy="45" r="1.2"/><circle cx="38" cy="23" r="1.2"/></g><path d="M45 19c3-5 8-7 13-6-1 5-4 8-8 9 2 2 2 6 1 8-3-1-6-4-6-7z" fill="#e8513d"/><path d="M40 51c1-6 7-9 13-7-1 5-6 8-13 7z" fill="#ffe066"/><path d="M43 49l7-4" fill="none" stroke-width="1.4"/>',
+  okonomi: '<ellipse cx="32" cy="43" rx="27" ry="12" fill="#3a3a3c"/><path d="M10 35v5c0 6 10 11 22 11s22-5 22-11v-5" fill="#a86d34"/><ellipse cx="32" cy="35" rx="22" ry="11" fill="#c98a4b"/><ellipse cx="32" cy="34" rx="18" ry="8" fill="#5a2c12" stroke="none"/><path d="M17 34l4-4 4 7 4-8 4 8 4-8 4 7 4-4" stroke="#fff" stroke-width="2.2" fill="none"/><g fill="#7cb342" stroke="none"><circle cx="22" cy="38" r="1.2"/><circle cx="34" cy="39" r="1.2"/><circle cx="43" cy="36" r="1.2"/><circle cx="28" cy="30" r="1.2"/></g><path d="M36 27l4-3 1 4zM24 39l4 1-3 3z" fill="#f6b38e" stroke-width="1.2"/>',
+  yakitori: SH + '<path d="M9 55 55 9" stroke-width="5.5"/><path d="M9 55 55 9" stroke="#d9b48a" stroke-width="2.6"/><rect x="13" y="36" width="15" height="15" rx="4.5" transform="rotate(45 20.5 43.5)" fill="#c76b2a"/><rect x="26" y="25" width="11" height="13" rx="3" transform="rotate(45 31.5 31.5)" fill="#e7f3c8"/><path d="M28 30l7 7" stroke="#7cb342" stroke-width="2.4" fill="none"/><rect x="36" y="13" width="15" height="15" rx="4.5" transform="rotate(45 43.5 20.5)" fill="#c76b2a"/><path d="M17 41l4-4M40 18l4-4" stroke="#ffd9b3" stroke-width="2" fill="none"/>',
+  kaisen: '<path d="M25 52h14v4H25z" fill="#1f4e79"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#1f4e79"/><path d="M14 43c3-2 5 2 8 0s5 2 8 0 5 2 8 0 5 2 8 0" fill="none" stroke="#fff" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#fff"/><path d="M11 30c3-6 10-8 16-6 0 3-1 6-4 7-5 1-10 1-12-1z" fill="#ff8a5b"/><path d="M15 28c3-1 6-1 9-1" stroke="#ffe3d6" stroke-width="1.6" fill="none"/><path d="M37 24c5-2 12-1 16 3-2 3-6 5-11 5-3 0-5-1-6-3z" fill="#d7263d"/><path d="M27 21c3-3 8-3 10 0-2 3-7 4-10 0z" fill="#7cb342"/><g fill="#ff9800" stroke-width="1.3"><circle cx="28" cy="32" r="2.3"/><circle cx="32.5" cy="33" r="2.3"/><circle cx="30" cy="28.5" r="2.3"/><circle cx="34.5" cy="29" r="2.3"/></g><path d="M44 34c2-1 4 0 4 1-1 2-4 2-4-1z" fill="#9ccc65" stroke-width="1.4"/>',
+  gyudon: '<path d="M25 52h14v4H25z" fill="#f08a24"/><path d="M8 31c0 13 10 22 24 22s24-9 24-22z" fill="#f08a24"/><path d="M13 42h38" stroke="#fff" stroke-width="2.2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#fff"/><path d="M10 31c4-6 9-2 13-5s9 0 13-3 9 1 13-1 5 3 6 5c-4 5-11 7-23 7S13 33 10 31z" fill="#8a5129"/><path d="M18 30c3-1 5 0 7-1M32 27c3-1 6 0 8-1" stroke="#f3e1c0" stroke-width="2" fill="none"/><path d="M41 32c1-3 5-4 7-2 0 2-3 4-7 2z" fill="#e53950" stroke-width="1.6"/><path d="M27 21c-2 2 2 3 0 5M35 19c-2 2 2 3 0 5" fill="none" stroke-width="1.8"/>',
+  shabu: '<path d="M4 33h6v5H4zM54 33h6v5h-6z" fill="#4a4a4f"/><path d="M8 31h48v10c0 9-8 15-24 15S8 50 8 41z" fill="#4a4a4f"/><path d="M14 44c5 3 31 3 36 0" fill="none" stroke="#77777d" stroke-width="2"/><ellipse cx="32" cy="31" rx="24" ry="7" fill="#f2e2c4"/><path d="M13 31c3-4 8-5 12-3s5 4 1 5c-4 1-10 1-13-2z" fill="#f28c9b"/><path d="M16 30c2-1 5-1 7 0" stroke="#fff" stroke-width="1.6" fill="none"/><rect x="29" y="27" width="7" height="6" rx="1" fill="#fff"/><path d="M39 30c1-3 6-4 8-1-1 2-6 3-8 1z" fill="#8d6e63"/><path d="M45 34c1-3 4-4 6-3 0 2-3 4-6 3z" fill="#9ccc65" stroke-width="1.6"/><path d="M22 18c-2 2 2 3 0 6M32 15c-2 2 2 4 0 7M42 18c-2 2 2 3 0 6" fill="none" stroke-width="2"/>',
+  dessert: SH + '<path d="M44 4l5 16" stroke-width="4"/><path d="M44 4l5 16" stroke="#d9a35b" stroke-width="2"/><path d="M27 48h10v6H27z" fill="#e9f6ff"/><path d="M20 54h24v3H20z" fill="#e9f6ff"/><path d="M17 21h30l-4 21c-1 5-5 7-11 7s-10-2-11-7z" fill="#e9f6ff"/><path d="M19 31h26l-1.1 6H20.1z" fill="#9ccc65" stroke="none"/><path d="M20.2 37h23.6l-.9 5H21.1z" fill="#fff3d6" stroke="none"/><path d="M17 21h30l-4 21c-1 5-5 7-11 7s-10-2-11-7z" fill="none"/><path d="M21 25l2 14" stroke="#fff" stroke-width="2" fill="none"/><path d="M14 22c0-5 4-7 8-6 1-4 5-6 9-6s8 2 9 6c4-1 8 1 8 6z" fill="#fff"/><path d="M28 13c-3-4 0-8 4-8s6 4 3 8l-3 4z" fill="#e8413b"/><path d="M29 6c1-2 3-2 3 0 1-2 3-2 3 0" fill="#7cb342" stroke-width="1.6"/><g fill="#ffe082" stroke="none"><circle cx="31" cy="10" r=".9"/><circle cx="34" cy="11" r=".9"/><circle cx="32" cy="13" r=".9"/></g>',
+  cafe: '<ellipse cx="30" cy="52" rx="23" ry="5" fill="#fff"/><path d="M48 31h3c4 0 6 3 6 6s-2 6-6 6h-4" fill="none" stroke-width="3.2"/><path d="M11 28h38v8c0 10-8 16-19 16S11 46 11 36z" fill="#fff"/><path d="M12 38c5 4 31 4 36 0" fill="none" stroke="#3f7d5a" stroke-width="3"/><ellipse cx="30" cy="28" rx="19" ry="5" fill="#8d5a34"/><path d="M26.5 27c0-2 3.5-2 3.5 0 0-2 3.5-2 3.5 0 0 2-3.5 3.5-3.5 3.5s-3.5-1.5-3.5-3.5z" fill="#f5e1c8" stroke="none"/><path d="M23 19c-2-3 2-4 0-7M30 19c-2-3 2-4 0-7M37 19c-2-3 2-4 0-7" fill="none" stroke-width="2"/>',
+  // views
+  v_none: SH + '<path d="M8 16l14-5 20 6 14-5v38l-14 5-20-6-14 5z" fill="#eef7e9"/><path d="M22 11v38M42 17v38" fill="none" stroke-width="1.8"/><path d="M8 38c6-3 10 2 14-1M42 30c5-2 9 1 14-2" fill="none" stroke="#4fc3f7" stroke-width="2.4"/><path d="M32 41s-9-8-9-15a9 9 0 0 1 18 0c0 7-9 15-9 15z" fill="#e5483d"/><circle cx="32" cy="26" r="3.2" fill="#fff"/>',
+  v_sea: '<circle cx="44" cy="19" r="8" fill="#ffca28"/><path d="M52 10l3-3M56 19h4M36 10l-3-3" fill="none" stroke-width="2"/><path d="M5 34c5-4 9 4 14 0s9 4 14 0 9 4 14 0 9 4 12 2v18H5z" fill="#3fa9f5"/><path d="M5 45c5-3 9 3 14 0s9 3 14 0 9 3 14 0 9 3 12 1" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M14 29l6-9 2 9z" fill="#fff"/>',
+  v_night: '<path d="M44 7a10 10 0 1 0 9 15 8 8 0 1 1-9-15z" fill="#ffd54f"/><path d="M14 12l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM27 7l.8 1.6 1.6.8-1.6.8-.8 1.6-.8-1.6-1.6-.8 1.6-.8z" fill="#ffd54f" stroke-width="1.2"/><rect x="7" y="31" width="11" height="25" fill="#3d4466"/><rect x="18" y="21" width="13" height="35" fill="#2c3252"/><rect x="31" y="35" width="10" height="21" fill="#3d4466"/><rect x="41" y="27" width="15" height="29" fill="#2c3252"/><g fill="#ffd54f" stroke="none"><rect x="10" y="35" width="2.5" height="3"/><rect x="21" y="25" width="2.5" height="3"/><rect x="26" y="31" width="2.5" height="3"/><rect x="21" y="40" width="2.5" height="3"/><rect x="34" y="40" width="2.5" height="3"/><rect x="45" y="31" width="2.5" height="3"/><rect x="50" y="38" width="2.5" height="3"/><rect x="45" y="45" width="2.5" height="3"/><rect x="12" y="44" width="2.5" height="3"/></g>',
+  v_garden: SH + '<ellipse cx="32" cy="52" rx="25" ry="5" fill="#a5d6a7"/><path d="M30 34l-3 18h9l-2-18z" fill="#8d6e63"/><path d="M8 31c0-5 6-8 11-6 2-5 9-6 13-3 3-3 11-3 13 3 5-1 9 3 7 7-1 2-3 3-6 3H13c-3 0-5-2-5-4z" fill="#66bb6a"/><path d="M16 20c0-4 5-6 8-4 2-4 8-5 11-2 3-2 9-1 10 3 3 0 5 3 4 5H17c-1 0-1-1-1-2z" fill="#81c784"/><path d="M14 30c2-1 4-2 6-2M27 19c2-1 4-1 6 0" fill="none" stroke="#c8e6c9" stroke-width="2"/><ellipse cx="47" cy="50" rx="5" ry="3" fill="#bdbdbd"/>',
+  v_river: '<rect x="5" y="7" width="54" height="50" rx="10" fill="#a5d6a7"/><path d="M21 57c4-10 13-14 11-24s-9-14-4-26h11c-5 11 4 16 4 26s-10 16-10 24z" fill="#4fc3f7"/><path d="M30 46c2-3 5-5 6-8M33 20c-1-3-1-6 0-9" fill="none" stroke="#fff" stroke-width="2"/><path d="M8 33c8-9 40-9 48 0v5c-8-8-40-8-48 0z" fill="#e53935"/><path d="M14 30v8M22 27v8M42 27v8M50 30v8" fill="none" stroke-width="1.8"/>',
+  v_fuji: '<circle cx="47" cy="17" r="7" fill="#ff7043"/><path d="M3 55 25 20c3-5 10-5 13 0l23 35z" fill="#5c7cfa"/><path d="M20 28l5-8c3-5 10-5 13 0l5 8-5 3-4-3-4 4-4-4-5 3z" fill="#fff"/><path d="M14 50c6-4 10-4 16 0M36 48c6-4 10-4 16 0" fill="none" stroke="#c5cff7" stroke-width="2"/>',
+};
+const ICON_ATTR = 'viewBox="0 0 64 64" fill="none" stroke="#1d1d1f" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"';
+function iconSvg(id) { return '<svg class="fi" ' + ICON_ATTR + '>' + (ICONS[id] || ICONS.v_none) + '</svg>'; }
+
 // ---------- state ----------
 const store = {
   get(k, d) { try { const v = localStorage.getItem("jff." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -423,12 +461,20 @@ function renderControls() {
   const fc = $("foodChips"); fc.replaceChildren();
   FOODS.forEach(f => {
     const b = el("button", "pick"); b.type = "button"; b.setAttribute("aria-pressed", String(S.foods.includes(f.id)));
-    b.append(el("span", "art", f.jp), el("span", "lbl", f.ko));
+    const art = el("span", "art"); art.innerHTML = iconSvg(f.id);
+    b.append(art, el("span", "lbl", f.ko), el("span", "ok", "✓"));
     b.addEventListener("click", () => { S.foods = S.foods.includes(f.id) ? S.foods.filter(x => x !== f.id) : [...S.foods, f.id]; save(); renderControls(); });
     fc.append(b);
   });
   const vc = $("viewChips"); vc.replaceChildren();
-  VIEWS.forEach(v => vc.append(chip(v.ko, S.view === v.id, () => { S.view = v.id; save(); renderControls(); })));
+  VIEWS.forEach(v => {
+    const b = el("button", "pick"); b.type = "button"; b.setAttribute("aria-pressed", String(S.view === v.id));
+    const art = el("span", "art"); art.innerHTML = iconSvg("v_" + v.id);
+    b.append(art, el("span", "lbl", v.ko.replace("·", "\n").split("\n")[0]), el("span", "ok", "✓"));
+    b.title = v.ko;
+    b.addEventListener("click", () => { S.view = v.id; save(); renderControls(); });
+    vc.append(b);
+  });
   const pc = $("priceChips"); pc.replaceChildren();
   PRICES.forEach(p => pc.append(chip(p.ko, S.prices.includes(p.id), () => { S.prices = S.prices.includes(p.id) ? S.prices.filter(x => x !== p.id) : [...S.prices, p.id]; save(); renderControls(); })));
   const sc = $("sortChips"); sc.replaceChildren();
@@ -515,7 +561,12 @@ function setHere(lat, lng, label) {
   $("locDot").classList.add("on"); $("locText").textContent = label;
   store.set("lastHere", here);
 }
-function foodGlyph(p) { const f = FOODS.find(f => f.id === p.foodId) || FOODS.find(f => S.foods.includes(f.id)); return f ? f.jp : "食"; }
+function foodIcon(p) { const f = FOODS.find(f => f.id === p.foodId) || FOODS.find(f => S.foods.includes(f.id)); return iconSvg(f ? f.id : "v_none"); }
+function fillImg(node, p) {
+  node.classList.toggle("noimg", !p.photo);
+  if (p.photo) node.style.backgroundImage = "url(\"" + p.photo + "\")";
+  else { node.style.backgroundImage = ""; node.insertAdjacentHTML("afterbegin", foodIcon(p)); }
+}
 
 // ---------- Google Maps loader ----------
 let placesLib = null;
@@ -762,8 +813,7 @@ function metaLine(p) {
 }
 function listItem(p, rank) {
   const b = el("button", "item"); b.type = "button";
-  const th = el("span", "th", p.photo ? "" : foodGlyph(p));
-  if (p.photo) th.style.backgroundImage = "url(\"" + p.photo + "\")";
+  const th = el("span", "th"); fillImg(th, p);
   const mid = el("span"); mid.style.minWidth = "0"; mid.style.display = "grid";
   mid.append(el("span", "nm", (rank ? rank + ". " : "") + p.name), el("span", "mt", metaLine(p)));
   if (S.view !== "none" && p.viewScore > 0) mid.append(el("span", "vw", VIEWS.find(v => v.id === S.view).ko + " 언급 " + p.viewScore + "회"));
@@ -781,8 +831,7 @@ function renderResults() {
   const lead = list.find(p => p.id === pickedId) || list[0];
   const f = $("feature"); f.replaceChildren();
   const card = el("button", "feature"); card.type = "button";
-  const ph = el("div", "ph", lead.photo ? "" : foodGlyph(lead));
-  if (lead.photo) ph.style.backgroundImage = "url(\"" + lead.photo + "\")";
+  const ph = el("div", "ph"); fillImg(ph, lead);
   ph.append(el("span", "tag", pickedId ? "오늘은 여기" : "도보 " + walkMin(lead.dist) + "분"));
   const body = el("div", "body");
   const title = el("div", "title"); title.append(el("span", null, lead.name), icon("chev"));
@@ -836,9 +885,8 @@ let current = null;
 function openDetail(p) {
   current = p;
   const hero = $("dHero");
-  hero.style.backgroundImage = p.photo ? "url(\"" + p.photo + "\")" : "";
-  [...hero.childNodes].forEach(n => { if (n.nodeType === 3) n.remove(); });
-  if (!p.photo) hero.prepend(document.createTextNode(foodGlyph(p)));
+  hero.querySelectorAll("svg.fi").forEach(n => n.remove());
+  fillImg(hero, p);
   $("dName").textContent = p.name;
   $("dType").textContent = p.type || "";
   $("dAddr").textContent = p.address || "";
