@@ -144,9 +144,10 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; app
 .status.err { color: var(--bad); }
 .note { background: var(--soft); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: var(--ink-2); }
 
-.fab { position: fixed; right: max(20px, calc(50% - 260px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px; border-radius: 50%; background: var(--ink); color: var(--inv); display: grid; place-items: center; box-shadow: 0 10px 24px rgb(0 0 0 / .25); z-index: 6; }
-.fab svg { width: 22px; height: 22px; }
-.fab:disabled { opacity: .5; }
+.go { width: 100%; padding-block: 15px; font-size: 15px; border-radius: 14px; }
+.go svg { width: 18px; height: 18px; }
+.go:disabled { opacity: .55; }
+.go-hint { margin: -10px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
 
 .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
 .tabs-in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
@@ -264,6 +265,8 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     <div class="foodgrid" id="foodChips"></div>
   </section>
 
+  <button class="btn solid go" id="searchBtn" type="button"><svg class="i"><use href="#i-search"/></svg><span id="searchLbl">검색하기</span></button>
+  <p class="go-hint">현재 위치에서 도보 10분 이내 가게만 찾아요</p>
 
   <div class="status" id="status" role="status"></div>
 
@@ -282,7 +285,7 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     <div class="list" id="results" aria-live="polite"></div>
   </section>
 
-  <div class="empty" id="emptyHint">음식을 고르고 오른쪽 아래 검색 버튼을 누르세요.</div>
+  <div class="empty" id="emptyHint">음식을 고르고 검색하기를 누르세요.</div>
 </main>
 
 <!-- ===== Tab: 저장 ===== -->
@@ -299,7 +302,6 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   <section class="sec" aria-labelledby="h-c1">
     <div class="sec-head"><h2 id="h-c1">검색 기준</h2><button class="aux" type="button" id="resetCond">기본값으로</button></div>
     <div class="rows">
-      <div class="row"><div class="row-head"><label for="radius">거리 (반경)</label><output id="radiusOut"></output></div><input type="range" id="radius" min="200" max="5000" step="100" value="1000"></div>
       <div class="row"><div class="row-head"><label for="minRating">최소 별점</label><output id="minRatingOut"></output></div><input type="range" id="minRating" min="0" max="4.8" step="0.1" value="3.8"><p class="hint">일본 구글맵은 별점이 짠 편이라 3.5 이상이면 괜찮은 집, 4.0 이상이면 인기 맛집인 경우가 많아요.</p></div>
       <div class="row"><div class="row-head"><label for="minReviews">최소 리뷰 수</label><output id="minReviewsOut"></output></div><input type="range" id="minReviews" min="0" max="500" step="10" value="30"></div>
       <div class="row"><div class="row-head"><span>가격대</span></div><div class="chips" id="priceChips"></div></div>
@@ -324,7 +326,6 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   </section>
 </main>
 
-<button class="fab" id="searchBtn" type="button" aria-label="조건에 맞는 가게 찾기"><svg class="i"><use href="#i-search"/></svg></button>
 
 <nav class="tabs" aria-label="메뉴"><div class="tabs-in">
   <button class="tab" type="button" data-tab="find" aria-current="page"><svg class="i"><use href="#i-compass"/></svg>찾기</button>
@@ -464,6 +465,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("jff." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("jff." + k, JSON.stringify(v)); } catch {} },
 };
+const WALK_MIN = 10, WALK_M_PER_MIN = 80, RADIUS = WALK_MIN * WALK_M_PER_MIN;   // max 10 minutes on foot ≈ 800m
 const DEFAULTS = { foods: ["sushi"], custom: "", radius: 1000, minRating: 3.8, minReviews: 30, prices: [], openNow: true, view: "none", viewStrict: false, sort: "best" };
 let S = Object.assign({}, DEFAULTS, store.get("settings", {}));
 S.foods = S.foods.filter(id => FOODS.some(f => f.id === id));
@@ -497,21 +499,20 @@ function renderControls() {
   const sc = $("sortChips"); sc.replaceChildren();
   SORTS.forEach(o => sc.append(chip(o.ko, S.sort === o.id, () => { S.sort = o.id; save(); renderControls(); if (lastResults.length) renderResults(); })));
   $("customFood").value = S.custom;
-  $("radius").value = S.radius; $("minRating").value = S.minRating; $("minReviews").value = S.minReviews;
+  $("minRating").value = S.minRating; $("minReviews").value = S.minReviews;
   $("openNow").checked = S.openNow;
-  $("radiusOut").textContent = fmtDist(S.radius) + " · 도보 약 " + Math.round(S.radius / 80) + "분";
   $("minRatingOut").textContent = S.minRating > 0 ? "★ " + Number(S.minRating).toFixed(1) + " 이상" : "상관없음";
   $("minReviewsOut").textContent = S.minReviews > 0 ? S.minReviews + "개 이상" : "상관없음";
   $("demoFlag").hidden = !demo;
   $("keyState").textContent = apiKey ? "등록됨" : (demo ? "체험 모드" : "");
   $("openSettings").textContent = apiKey ? "API 키 변경" : "API 키 설정";
-  const changed = ["radius", "minRating", "minReviews", "openNow", "sort"].filter(k => S[k] !== DEFAULTS[k]).length + (S.prices.length ? 1 : 0);
+  const changed = ["minRating", "minReviews", "openNow", "sort"].filter(k => S[k] !== DEFAULTS[k]).length + (S.prices.length ? 1 : 0);
   $("filterN").hidden = !changed; $("filterN").textContent = changed;
   renderPresets();
 }
 function save() { store.set("settings", S); }
 
-["radius", "minRating", "minReviews"].forEach(id => $(id).addEventListener("input", e => { S[id] = Number(e.target.value); save(); renderControls(); }));
+["minRating", "minReviews"].forEach(id => $(id).addEventListener("input", e => { S[id] = Number(e.target.value); save(); renderControls(); }));
 $("openNow").addEventListener("change", e => { S.openNow = e.target.checked; save(); renderControls(); });
 $("customFood").addEventListener("input", e => { S.custom = e.target.value; save(); });
 $("customFood").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); search(); } });
@@ -594,7 +595,6 @@ $("profile").addEventListener("close", () => {
 function showTab(name) {
   ["find", "saved", "cond"].forEach(t => $("view-" + t).hidden = t !== name);
   document.querySelectorAll(".tab").forEach(b => { if (b.dataset.tab === name) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
-  $("searchBtn").hidden = name !== "find";
   if (name === "saved") renderSaved();
   window.scrollTo(0, 0);
 }
@@ -762,7 +762,7 @@ function scorePlace(p) {
   // Bayesian rating: pulls places with few reviews toward the average so a 5.0 with 3 reviews doesn't win
   const m = 60, C = 3.5, v = p.reviews || 0, R = p.rating || 0;
   const bayes = (v * R + m * C) / (v + m);
-  const distFactor = 1 - 0.35 * Math.min(1, p.dist / S.radius);
+  const distFactor = 1 - 0.35 * Math.min(1, p.dist / RADIUS);
   const viewBonus = S.view !== "none" ? 0.4 * Math.min(p.viewScore, 3) : 0;
   return bayes * distFactor + viewBonus;
 }
@@ -778,7 +778,7 @@ async function fetchGoogle(queries) {
   const { Place } = await loadGoogle(apiKey);
   const fields = ["id", "displayName", "location", "rating", "userRatingCount", "priceLevel", "formattedAddress", "googleMapsURI", "photos", "regularOpeningHours", "utcOffsetMinutes", "businessStatus", "primaryTypeDisplayName"];
   if (S.view !== "none") fields.push("reviews");
-  const bounds = boundsFor(here, S.radius);
+  const bounds = boundsFor(here, RADIUS);
   const errors = [];
   const batches = await Promise.all(queries.map(qq => Place.searchByText({
     textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region: "jp",
@@ -842,16 +842,16 @@ async function search() {
     if (demo) setHere(34.6687, 135.5013, "난바역 (체험 모드 기본 위치)");
     else { setStatus("먼저 ‘현재 위치’를 누르거나 위 검색창에 역·지명을 입력해 주세요.", true); return; }
   }
-  $("searchBtn").disabled = true;
-  setStatus("조건에 맞는 가게를 찾는 중…");
+  $("searchBtn").disabled = true; $("searchLbl").textContent = "찾는 중…";
+  setStatus("");
   try {
     const raw = demo ? demoData() : await fetchGoogle(buildQueries());
-    const total = raw.length;
+    const nearby = raw.filter(p => haversine(here, p) <= RADIUS).length;
     const list = raw.map(p => {
       const vi = viewInfo(p.name, p.reviewTexts);
       return Object.assign(p, { dist: haversine(here, p), viewScore: vi.score, viewQuote: vi.quote });
     }).filter(p =>
-      p.dist <= S.radius && (p.rating || 0) >= S.minRating && p.reviews >= S.minReviews &&
+      p.dist <= RADIUS && (p.rating || 0) >= S.minRating && p.reviews >= S.minReviews &&
       (!S.prices.length || !p.price || S.prices.includes(p.price)) &&
       (!S.openNow || p.open !== false) &&
       (S.view === "none" || !S.viewStrict || p.viewScore > 0)
@@ -860,7 +860,12 @@ async function search() {
     lastResults = list; pickedId = null;
     if (!list.length) {
       renderResults();
-      setStatus(total ? "주변에서 " + total + "곳을 찾았지만 조건에 맞는 곳이 없어요. 반경을 넓히거나 별점·리뷰 수 기준을 낮춰 보세요." : "주변에서 가게를 찾지 못했어요. 반경을 넓히거나 다른 음식을 골라 보세요.", true);
+      const e = $("emptyHint");
+      e.textContent = nearby
+        ? "도보 10분 안에 " + nearby + "곳이 있지만 별점·리뷰 수 조건에 맞지 않아요. ‘조건’ 탭에서 기준을 낮춰 보세요."
+        : "주위에 관련 음식점이 없습니다.";
+      e.hidden = false;
+      e.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
       setStatus("");
       renderResults();
@@ -868,7 +873,7 @@ async function search() {
     }
   } catch (err) {
     setStatus(err.message || "검색 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.", true);
-  } finally { $("searchBtn").disabled = false; }
+  } finally { $("searchBtn").disabled = false; $("searchLbl").textContent = "검색하기"; }
 }
 
 // ---------- rendering ----------
