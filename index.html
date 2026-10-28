@@ -63,6 +63,18 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .locbar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
 .locbar .dot.on { background: var(--ok); }
 .locbar .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.locbox { display: grid; gap: 10px; position: relative; }
+.locbox .field input { padding-block: 11px; font-size: 14px; }
+.locbox .clear { color: var(--muted); font-size: 18px; line-height: 1; padding: 4px; }
+.suggest { position: absolute; top: 100%; left: 0; right: 0; margin-top: 6px; z-index: 8; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 30px rgb(0 0 0 / .14); overflow: hidden; }
+.sg { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.sg:last-child { border-bottom: 0; }
+.sg:hover, .sg:focus-visible { background: var(--soft); }
+.sg svg { color: var(--muted); }
+.sg b { display: block; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg small { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg-empty { padding: 14px; font-size: 13px; color: var(--muted); }
 .locbar button { font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 
 .sec { display: grid; gap: 12px; }
@@ -212,9 +224,15 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     <button class="sq" type="button" id="filterBtn" aria-label="조건 설정"><svg class="i"><use href="#i-sliders"/></svg><span class="n" id="filterN" hidden></span></button>
   </div>
 
-  <div class="locbar">
-    <span class="dot" id="locDot"></span><span class="txt" id="locText">위치를 아직 못 가져왔어요</span>
-    <button type="button" id="gpsBtn">현재 위치</button>
+  <div class="locbox">
+    <div class="locbar">
+      <span class="dot" id="locDot"></span><span class="txt" id="locText">위치를 아직 못 가져왔어요</span>
+      <button type="button" id="gpsBtn">현재 위치</button>
+    </div>
+    <form id="locForm" role="search">
+      <label class="field"><svg class="i"><use href="#i-pin"/></svg><input type="search" id="locInput" placeholder="역·지명으로 위치 바꾸기 (예: 난바, 시부야역)" autocomplete="off" enterkeyhint="search" aria-autocomplete="list" aria-controls="suggest"><button class="clear" type="button" id="locClear" aria-label="지우기" hidden>×</button></label>
+    </form>
+    <div class="suggest" id="suggest" role="listbox" hidden></div>
   </div>
 
   <div class="note" id="demoFlag" hidden>지금은 <b>예시 데이터</b>로 보여주는 체험 모드예요. 실제 가게는 ‘조건’ 탭에서 API 키를 넣으면 찾을 수 있어요.</div>
@@ -273,13 +291,6 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
     </div>
   </section>
 
-  <section class="sec" aria-labelledby="h-c2">
-    <div class="sec-head"><h2 id="h-c2">기준 위치</h2></div>
-    <form class="inline" id="locForm">
-      <label class="field"><svg class="i"><use href="#i-pin"/></svg><input type="search" id="locInput" placeholder="역·지명 입력 (예: 난바역, 시부야)" autocomplete="off"></label>
-      <button class="btn solid" type="submit">이동</button>
-    </form>
-  </section>
 
   <section class="sec" aria-labelledby="h-c3">
     <div class="sec-head"><h2 id="h-c3">내 조건</h2></div>
@@ -523,25 +534,97 @@ function loadGoogle(key) {
 
 // ---------- location ----------
 $("gpsBtn").addEventListener("click", () => {
-  if (!navigator.geolocation) { setStatus("이 브라우저는 위치 기능을 지원하지 않아요. ‘조건’ 탭에서 역·지명을 입력해 주세요.", true); return; }
+  if (!navigator.geolocation) { setStatus("이 브라우저는 위치 기능을 지원하지 않아요. 위 검색창에 역·지명을 입력해 주세요.", true); return; }
   setStatus("현재 위치를 찾는 중…");
   navigator.geolocation.getCurrentPosition(
     p => { setHere(p.coords.latitude, p.coords.longitude, "현재 위치 · 오차 " + Math.round(p.coords.accuracy) + "m"); setStatus(""); },
-    err => setStatus(err.code === 1 ? "위치 권한이 꺼져 있어요. 브라우저 설정에서 이 사이트의 위치 접근을 허용해 주세요." : "위치를 가져오지 못했어요. 잠시 후 다시 시도하거나 ‘조건’ 탭에서 역·지명을 입력해 주세요.", true),
+    err => setStatus(err.code === 1 ? "위치 권한이 꺼져 있어요. 브라우저 설정에서 이 사이트의 위치 접근을 허용해 주세요." : "위치를 가져오지 못했어요. 잠시 후 다시 시도하거나 위 검색창에 역·지명을 입력해 주세요.", true),
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
   );
 });
+// Location search with autocomplete (Places API New). Demo mode uses a small built-in list.
+const DEMO_SPOTS = [
+  ["난바역", "오사카 · 주오구", 34.6666, 135.5011], ["도톤보리", "오사카 · 주오구", 34.6687, 135.5013], ["우메다역", "오사카 · 기타구", 34.7025, 135.4959],
+  ["신사이바시", "오사카 · 주오구", 34.6750, 135.5010], ["교토역", "교토 · 시모교구", 34.9858, 135.7588], ["기온", "교토 · 히가시야마구", 35.0037, 135.7788],
+  ["시부야역", "도쿄 · 시부야구", 35.6580, 139.7016], ["신주쿠역", "도쿄 · 신주쿠구", 35.6896, 139.7006], ["긴자", "도쿄 · 주오구", 35.6717, 139.7650],
+  ["아사쿠사", "도쿄 · 다이토구", 35.7148, 139.7967], ["하카타역", "후쿠오카 · 하카타구", 33.5897, 130.4207], ["텐진", "후쿠오카 · 주오구", 33.5911, 130.3991],
+  ["삿포로역", "홋카이도 · 기타구", 43.0687, 141.3508], ["오타루 운하", "홋카이도 · 오타루", 43.1994, 141.0026], ["나하 국제거리", "오키나와 · 나하", 26.2155, 127.6853],
+];
+let sgToken = null, sgTimer = null, sgSeq = 0;
+const sgBox = $("suggest"), locInput = $("locInput");
+function hideSuggest() { sgBox.hidden = true; sgBox.replaceChildren(); }
+function showSuggest(items, emptyText) {
+  sgBox.replaceChildren();
+  if (!items.length) { sgBox.append(el("div", "sg-empty", emptyText || "검색 결과가 없어요")); sgBox.hidden = false; return; }
+  items.forEach(it => {
+    const b = el("button", "sg"); b.type = "button"; b.setAttribute("role", "option");
+    const t = el("span"); t.style.minWidth = "0"; t.append(el("b", null, it.main), el("small", null, it.sub || ""));
+    b.append(icon("pin", 16), t);
+    b.addEventListener("click", () => chooseSpot(it));
+    sgBox.append(b);
+  });
+  sgBox.hidden = false;
+}
+async function fetchSuggest(q) {
+  const seq = ++sgSeq;
+  if (demo) {
+    const items = DEMO_SPOTS.filter(r => (r[0] + r[1]).includes(q)).slice(0, 6).map(r => ({ main: r[0], sub: r[1] + " (체험 모드)", lat: r[2], lng: r[3] }));
+    showSuggest(items, "체험 모드에서는 주요 지역만 검색돼요 (예: 난바, 시부야, 교토)");
+    return;
+  }
+  try {
+    await loadGoogle(apiKey);
+    const { AutocompleteSuggestion, AutocompleteSessionToken } = placesLib;
+    if (!sgToken) sgToken = new AutocompleteSessionToken();
+    const req = { input: q, language: "ko", region: "jp", sessionToken: sgToken };
+    if (here) req.locationBias = { center: { lat: here.lat, lng: here.lng }, radius: 50000 };
+    const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
+    if (seq !== sgSeq) return;   // a newer keystroke already answered
+    const items = suggestions.filter(x => x.placePrediction).slice(0, 6).map(x => {
+      const pp = x.placePrediction;
+      return { main: pp.mainText ? pp.mainText.toString() : pp.text.toString(), sub: pp.secondaryText ? pp.secondaryText.toString() : "", pp };
+    });
+    showSuggest(items);
+  } catch (err) { if (seq === sgSeq) showSuggest([], "추천 목록을 불러오지 못했어요. 입력 후 검색(엔터)을 눌러 주세요."); console.warn(err); }
+}
+async function chooseSpot(it) {
+  hideSuggest(); locInput.blur();
+  try {
+    if (it.pp) {
+      const place = it.pp.toPlace();
+      await place.fetchFields({ fields: ["displayName", "location"] });
+      sgToken = null;   // session ends once a place is picked
+      setHere(place.location.lat(), place.location.lng(), (place.displayName || it.main) + " 기준");
+    } else setHere(it.lat, it.lng, it.main + " 기준");
+    locInput.value = ""; $("locClear").hidden = true;
+    setStatus("");
+    if (lastResults.length) search();
+  } catch (err) { setStatus("위치를 가져오지 못했어요. 다른 이름으로 검색해 주세요.", true); console.warn(err); }
+}
+locInput.addEventListener("input", () => {
+  const q = locInput.value.trim();
+  $("locClear").hidden = !locInput.value;
+  clearTimeout(sgTimer);
+  if (q.length < 1) { hideSuggest(); return; }
+  sgTimer = setTimeout(() => fetchSuggest(q), 250);
+});
+locInput.addEventListener("focus", () => { if (locInput.value.trim()) fetchSuggest(locInput.value.trim()); });
+$("locClear").addEventListener("click", () => { locInput.value = ""; $("locClear").hidden = true; hideSuggest(); locInput.focus(); });
+document.addEventListener("click", e => { if (!e.target.closest(".locbox")) hideSuggest(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") hideSuggest(); });
 $("locForm").addEventListener("submit", async e => {
+  // Enter without picking a suggestion: take the best text-search match
   e.preventDefault();
-  const q = $("locInput").value.trim(); if (!q) return;
-  if (demo) { setHere(34.6687, 135.5013, q + " (체험 모드: 난바 기준)"); showTab("find"); return; }
+  const q = locInput.value.trim(); if (!q) return;
+  const first = sgBox.querySelector(".sg");
+  if (first) { first.click(); return; }
+  if (demo) { setHere(34.6687, 135.5013, q + " (체험 모드: 난바 기준)"); hideSuggest(); return; }
   try {
     const { Place } = await loadGoogle(apiKey);
     const { places } = await Place.searchText({ textQuery: q, fields: ["displayName", "location"], maxResultCount: 1, region: "jp", language: "ko" });
-    if (!places.length) { setStatus("‘" + q + "’을(를) 찾지 못했어요. 다른 이름으로 입력해 주세요.", true); showTab("find"); return; }
-    setHere(places[0].location.lat(), places[0].location.lng(), places[0].displayName + " 기준");
-    setStatus(""); showTab("find");
-  } catch (err) { setStatus(err.message || String(err), true); showTab("find"); }
+    if (!places.length) { showSuggest([], "‘" + q + "’을(를) 찾지 못했어요. 다른 이름으로 입력해 주세요."); return; }
+    chooseSpot({ main: places[0].displayName, lat: places[0].location.lat(), lng: places[0].location.lng() });
+  } catch (err) { setStatus(err.message || String(err), true); }
 });
 
 // ---------- search ----------
@@ -641,7 +724,7 @@ async function search() {
   if (!S.foods.length && !S.custom.trim()) { setStatus("먹고 싶은 음식을 하나 이상 골라 주세요.", true); return; }
   if (!here) {
     if (demo) setHere(34.6687, 135.5013, "난바역 (체험 모드 기본 위치)");
-    else { setStatus("먼저 ‘현재 위치’를 누르거나 ‘조건’ 탭에서 역·지명을 입력해 주세요.", true); return; }
+    else { setStatus("먼저 ‘현재 위치’를 누르거나 위 검색창에 역·지명을 입력해 주세요.", true); return; }
   }
   $("searchBtn").disabled = true;
   setStatus("조건에 맞는 가게를 찾는 중…");
