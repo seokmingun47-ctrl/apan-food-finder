@@ -202,6 +202,7 @@ input[type=range] { width: 100%; accent-color: var(--ink); }
 .map-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); margin-top: -6px; }
 .map-foot a { color: var(--ink); font-weight: 800; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
 .hours { font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.sortbar { margin-block: -8px -6px; }
 .sep { padding: 10px 14px; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--soft); border-bottom: 1px solid var(--line); }
 .item.below .nm { color: var(--ink-2); }
 .hours .today { color: var(--ink); font-weight: 800; }
@@ -271,6 +272,8 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   <p class="go-hint">현재 위치에서 도보 30분 이내 가게만 찾아요</p>
 
   <div class="status" id="status" role="status"></div>
+
+  <div class="chips sortbar" id="sortBar" role="group" aria-label="정렬" hidden></div>
 
   <section class="sec" id="featSec" hidden aria-labelledby="h-feat">
     <div class="sec-head"><h2 id="h-feat">추천</h2><button class="aux" type="button" id="pickBtn">아무거나 골라줘</button></div>
@@ -428,7 +431,7 @@ const PRICES = [
 ];
 const SORTS = [
   { id: "best", ko: "추천순" },
-  { id: "near", ko: "가까운순" },
+  { id: "near", ko: "가까운 순" },
   { id: "rating", ko: "별점순" },
 ];
 const PRICE_LABEL = { FREE: "무료", INEXPENSIVE: "¥", MODERATE: "¥¥", EXPENSIVE: "¥¥¥", VERY_EXPENSIVE: "¥¥¥¥" };
@@ -499,8 +502,11 @@ function renderControls() {
   });
   const pc = $("priceChips"); pc.replaceChildren();
   PRICES.forEach(p => pc.append(chip(p.ko, S.prices.includes(p.id), () => { S.prices = S.prices.includes(p.id) ? S.prices.filter(x => x !== p.id) : [...S.prices, p.id]; save(); renderControls(); })));
-  const sc = $("sortChips"); sc.replaceChildren();
-  SORTS.forEach(o => sc.append(chip(o.ko, S.sort === o.id, () => { S.sort = o.id; save(); renderControls(); if (lastResults.length) renderResults(); })));
+  ["sortChips", "sortBar"].forEach(id => {
+    const sc = $(id); sc.replaceChildren();
+    SORTS.forEach(o => sc.append(chip(o.ko, S.sort === o.id, () => setSort(o.id))));
+  });
+  $("h-feat").textContent = S.sort === "near" ? "가장 가까운 곳" : S.sort === "rating" ? "별점 최고" : "추천";
   $("customFood").value = S.custom;
   $("minRating").value = S.minRating; $("minReviews").value = S.minReviews;
   $("openNow").checked = S.openNow;
@@ -514,6 +520,12 @@ function renderControls() {
   renderPresets();
 }
 function save() { store.set("settings", S); }
+function setSort(id) {
+  const refetch = (id === "near") !== (S.sort === "near");   // 가까운순 asks Google for the nearest places, so search again
+  S.sort = id; save(); renderControls();
+  if (!lastResults.length) return;
+  if (refetch && !demo) search(); else { pickedId = null; renderResults(); }
+}
 
 ["minRating", "minReviews"].forEach(id => $(id).addEventListener("input", e => { S[id] = Number(e.target.value); save(); renderControls(); }));
 $("openNow").addEventListener("change", e => { S.openNow = e.target.checked; save(); renderControls(); });
@@ -847,6 +859,7 @@ function sortList(list) {
   const by = S.sort === "near" ? (a, b) => a.dist - b.dist
     : S.sort === "rating" ? (a, b) => (b.rating || 0) - (a.rating || 0) || b.reviews - a.reviews
     : (a, b) => b.score - a.score;
+  if (S.sort === "near") return [...list].sort((a, b) => ((b.rel || 1) - (a.rel || 1)) || by(a, b));
   return [...list].sort((a, b) => ((b.rel || 1) - (a.rel || 1)) || (a.below - b.below) || by(a, b));
 }
 
@@ -856,10 +869,10 @@ async function fetchGoogle(queries) {
   if (S.view !== "none") fields.push("reviews");
   const bounds = boundsFor(here, RADIUS);
   const errors = [];
-  const region = isKorea(here) ? "kr" : "jp";
+  const region = isKorea(here) ? "kr" : "jp", near = S.sort === "near";
   const run = (qq) => qq.kind === "nearby"
-    ? Place.searchNearby({ fields, locationRestriction: { center: { lat: here.lat, lng: here.lng }, radius: RADIUS }, includedTypes: qq.types, maxResultCount: 20, rankPreference: "POPULARITY", language: "ko", region })
-    : Place.searchByText({ textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region, ...(S.openNow ? { isOpenNow: true } : {}) });
+    ? Place.searchNearby({ fields, locationRestriction: { center: { lat: here.lat, lng: here.lng }, radius: RADIUS }, includedTypes: qq.types, maxResultCount: 20, rankPreference: near ? "DISTANCE" : "POPULARITY", language: "ko", region })
+    : Place.searchByText({ textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region, rankPreference: near ? "DISTANCE" : "RELEVANCE", ...(S.openNow ? { isOpenNow: true } : {}) });
   const batches = await Promise.all(queries.map(qq => Promise.resolve().then(() => run(qq))
     .then(r => r.places.map(p => ({ p, foodId: qq.foodId })))
     .catch(e => { console.warn(qq.kind, qq.q || qq.types, e); errors.push(e); return []; })));
@@ -978,7 +991,7 @@ function listItem(p, rank) {
 function renderResults() {
   const list = sortList(lastResults);
   $("emptyHint").hidden = !!list.length || !!$("status").textContent;
-  $("featSec").hidden = !list.length; $("listSec").hidden = list.length < 2;
+  $("featSec").hidden = !list.length; $("listSec").hidden = list.length < 2; $("sortBar").hidden = !list.length;
   if (!list.length) { $("emptyHint").hidden = true; $("mapSec").hidden = true; return; }
   const lead = list.find(p => p.id === pickedId) || list[0];
   const f = $("feature"); f.replaceChildren();
