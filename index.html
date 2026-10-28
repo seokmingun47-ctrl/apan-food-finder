@@ -781,6 +781,35 @@ const FOOD_SEARCH = {
   dessert: { ko: "디저트", types: ["dessert_shop", "bakery", "ice_cream_shop"], must: ["dessert_shop", "dessert_restaurant", "bakery", "ice_cream_shop", "cafe", "coffee_shop", "confectionery", "cake_shop", "donut_shop", "chocolate_shop", "tea_house"] },
   cafe: { ko: "카페", types: ["cafe", "coffee_shop"], must: ["cafe", "coffee_shop", "tea_house", "cat_cafe", "dog_cafe", "bakery", "dessert_shop"] },
 };
+// Name keywords (ko/ja/en) that mark a real match, and cuisine types that are fine to see for that food.
+// A place tagged with some other cuisine (pizza, chinese …) is dropped; a keyword or type match ranks first.
+const FOOD_MATCH = {
+  sushi: { kw: ["스시", "초밥", "寿司", "鮨", "すし", "sushi", "오마카세"], ok: ["japanese_restaurant"] },
+  yakiniku: { kw: ["야키니쿠", "焼肉", "고기", "갈비", "삼겹", "한우", "구이", "호르몬", "ホルモン", "bbq", "yakiniku"], ok: ["korean_restaurant", "japanese_restaurant", "steak_house", "korean_barbecue_restaurant"] },
+  ramen: { kw: ["라멘", "라면", "ラーメン", "らーめん", "拉麺", "ramen", "멘야", "麺屋", "츠케멘", "つけ麺", "멘", "麺", "돈코츠", "豚骨", "탄탄멘", "마제소바"], ok: ["japanese_restaurant", "noodle_shop"] },
+  tonkatsu: { kw: ["돈카츠", "돈까스", "카츠", "とんかつ", "トンカツ", "カツ", "katsu"], ok: ["japanese_restaurant", "tonkatsu_restaurant"] },
+  izakaya: { kw: ["이자카야", "居酒屋", "酒場", "izakaya", "사케", "하이볼"], ok: ["japanese_restaurant", "bar", "pub", "izakaya_restaurant"] },
+  unagi: { kw: ["장어", "うなぎ", "鰻", "ウナギ", "unagi", "히츠마부시", "ひつまぶし"], ok: ["japanese_restaurant", "korean_restaurant", "seafood_restaurant"] },
+  udon: { kw: ["우동", "소바", "うどん", "そば", "蕎麦", "udon", "soba"], ok: ["japanese_restaurant", "noodle_shop"] },
+  tempura: { kw: ["텐동", "텐뿌라", "덴뿌라", "튀김", "天ぷら", "天丼", "てんぷら", "tempura"], ok: ["japanese_restaurant"] },
+  okonomi: { kw: ["오코노미", "お好み", "몬자", "もんじゃ", "okonomi", "teppanyaki", "철판"], ok: ["japanese_restaurant"] },
+  yakitori: { kw: ["야키토리", "꼬치", "쿠시", "焼き鳥", "焼鳥", "やきとり", "串", "yakitori"], ok: ["japanese_restaurant", "bar", "pub", "izakaya_restaurant"] },
+  kaisen: { kw: ["해산물", "회덮밥", "횟집", "수산", "海鮮", "刺身", "魚", "seafood", "카이센"], ok: ["japanese_restaurant", "korean_restaurant", "sushi_restaurant"] },
+  gyudon: { kw: ["규동", "牛丼", "덮밥", "돈부리", "丼", "gyudon", "すき家", "吉野家", "松屋"], ok: ["japanese_restaurant", "fast_food_restaurant"] },
+  shabu: { kw: ["샤브", "しゃぶ", "스키야키", "すき焼", "鍋", "shabu"], ok: ["japanese_restaurant", "korean_restaurant", "hot_pot_restaurant"] },
+};
+const GENERIC_TYPES = ["restaurant", "food", "point_of_interest", "establishment", "meal_takeaway", "meal_delivery", "store", "food_store", "asian_restaurant"];
+function matchFood(place, foodId) {
+  // returns 2 = clear match, 1 = plausible (generic restaurant), 0 = wrong kind of place
+  const types = place.types || [], name = String(place.displayName || place.name || "").toLowerCase();
+  if (!foodId) return name.includes(S.custom.trim().toLowerCase()) ? 2 : 1;
+  const cfg = FOOD_SEARCH[foodId] || {}, m = FOOD_MATCH[foodId];
+  if (cfg.must) return types.some(t => cfg.must.includes(t)) ? 2 : 0;
+  if ((cfg.types || []).some(t => types.includes(t)) || (m && m.kw.some(k => name.includes(k.toLowerCase())))) return 2;
+  const allowed = [...GENERIC_TYPES, ...((m && m.ok) || [])];
+  const otherCuisine = types.some(t => (t.endsWith("_restaurant") || ["cafe", "coffee_shop", "bakery", "dessert_shop", "ice_cream_shop", "bar", "pub"].includes(t)) && !allowed.includes(t));
+  return otherCuisine ? 0 : 1;
+}
 function buildQueries() {
   const kr = isKorea(here), qs = [];
   FOODS.filter(f => S.foods.includes(f.id)).forEach(f => {
@@ -810,14 +839,15 @@ function scorePlace(p) {
   const bayes = (v * R + m * C) / (v + m);
   const distFactor = 1 - 0.35 * Math.min(1, p.dist / RADIUS);
   const viewBonus = S.view !== "none" ? 0.4 * Math.min(p.viewScore, 3) : 0;
-  return bayes * distFactor + viewBonus;
+  const matchBonus = p.rel === 2 ? 0.6 : 0;   // a clear ramen shop beats a generic restaurant from the same search
+  return bayes * distFactor + viewBonus + matchBonus;
 }
 function sortList(list) {
-  // places that meet the rating/review bar always come before the top-up ones
+  // clear food matches first, then places that meet the rating/review bar, then the chosen sort
   const by = S.sort === "near" ? (a, b) => a.dist - b.dist
     : S.sort === "rating" ? (a, b) => (b.rating || 0) - (a.rating || 0) || b.reviews - a.reviews
     : (a, b) => b.score - a.score;
-  return [...list].sort((a, b) => (a.below - b.below) || by(a, b));
+  return [...list].sort((a, b) => ((b.rel || 1) - (a.rel || 1)) || (a.below - b.below) || by(a, b));
 }
 
 async function fetchGoogle(queries) {
@@ -842,14 +872,17 @@ async function fetchGoogle(queries) {
   const byId = new Map();
   batches.flat().forEach(x => { if (!byId.has(x.p.id)) byId.set(x.p.id, x); });
   const out = [];
-  for (const { p, foodId } of byId.values()) {
+  const picked = [...S.foods, ...(S.custom.trim() ? [null] : [])];
+  for (const { p } of byId.values()) {
     if (p.businessStatus && p.businessStatus !== "OPERATIONAL") continue;
-    const must = foodId && FOOD_SEARCH[foodId] && FOOD_SEARCH[foodId].must;
-    if (must && !(p.types || []).some(t => must.includes(t))) continue;
+    // judge the place against every chosen food and keep the best fit
+    let rel = 0, foodId = null;
+    picked.forEach(f => { const r = matchFood(p, f); if (r > rel) { rel = r; foodId = f; } });
+    if (!rel) continue;
     let open;
     try { open = await p.isOpen(); } catch { open = undefined; }
     out.push({
-      id: p.id, foodId, name: p.displayName, lat: p.location.lat(), lng: p.location.lng(),
+      id: p.id, foodId, rel, name: p.displayName, lat: p.location.lat(), lng: p.location.lng(),
       rating: p.rating, reviews: p.userRatingCount || 0, price: p.priceLevel, address: p.formattedAddress,
       type: p.primaryTypeDisplayName, mapsUrl: p.googleMapsURI, open,
       hours: p.regularOpeningHours ? p.regularOpeningHours.weekdayDescriptions || [] : [],
@@ -880,7 +913,7 @@ function demoData() {
   const sel = new Set(S.foods), custom = S.custom.trim();
   const days = ["월요일: 11:00~22:00", "화요일: 11:00~22:00", "수요일: 정기휴무", "목요일: 11:00~22:00", "금요일: 11:00~23:00", "토요일: 10:00~23:00", "일요일: 10:00~21:00"];
   return rows.filter(r => sel.has(r[1]) || (custom && r[0].includes(custom))).map((r, i) => ({
-    id: "demo" + i, foodId: r[1], name: r[0],
+    id: "demo" + i, foodId: r[1], rel: 2, name: r[0],
     lat: base.lat + r[5] / 111320, lng: base.lng + r[6] / (111320 * Math.cos(base.lat * Math.PI / 180)),
     rating: r[2], reviews: r[3], price: r[4], address: "大阪市中央区 (예시 주소)", type: FOODS.find(f => f.id === r[1]).ko + " 전문점",
     mapsUrl: "", open: i % 5 !== 3, photo: "", hours: days, reviewTexts: r[7],
@@ -934,6 +967,7 @@ function listItem(p, rank) {
   const th = el("span", "th"); fillImg(th, p);
   const mid = el("span"); mid.style.minWidth = "0"; mid.style.display = "grid";
   mid.append(el("span", "nm", (rank ? rank + ". " : "") + p.name), el("span", "mt", metaLine(p)));
+  if (p.below) mid.append(el("span", "vw", p.reviews < S.minReviews ? "리뷰 적음 · 기준 미달" : "별점 기준 미달"));
   if (S.view !== "none" && p.viewScore > 0) mid.append(el("span", "vw", VIEWS.find(v => v.id === S.view).ko + " 언급 " + p.viewScore + "회"));
   const rt = el("span", "rt"); const [ot, oc] = openText(p);
   rt.append(el("span", oc, ot || "도보 " + walkMin(p.dist) + "분"), icon("chev", 16));
@@ -967,11 +1001,7 @@ function renderResults() {
   f.append(card);
   const box = $("results"); box.replaceChildren();
   const rest = list.filter(p => p.id !== lead.id).slice(0, 30);
-  let sepShown = false;
-  rest.forEach((p, i) => {
-    if (p.below && !sepShown) { box.append(el("div", "sep", "별점·리뷰 기준엔 못 미치지만 가까운 곳")); sepShown = true; }
-    box.append(listItem(p, i + 2));
-  });
+  rest.forEach((p, i) => box.append(listItem(p, i + 2)));
   const nBelow = list.filter(p => p.below).length;
   $("listCount").textContent = (list.length - nBelow) + "곳" + (nBelow ? " + 근처 " + nBelow + "곳" : "");
   drawResultsMap([lead, ...rest]);
