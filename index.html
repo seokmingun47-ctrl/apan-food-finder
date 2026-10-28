@@ -147,6 +147,28 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; app
 .go { width: 100%; padding-block: 15px; font-size: 15px; border-radius: 14px; }
 .go svg { width: 18px; height: 18px; }
 .go:disabled { opacity: .55; }
+.roulette { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgb(0 0 0 / .55); padding: 20px; }
+.rl-card { width: min(330px, 100%); background: var(--surface); color: var(--ink); border-radius: 28px; padding: 26px 22px 24px; text-align: center; display: grid; gap: 14px; box-shadow: 0 24px 60px rgb(0 0 0 / .35); }
+.rl-top { margin: 0; font-size: 13px; font-weight: 800; letter-spacing: 1.5px; color: var(--muted); }
+.rl-win { position: relative; width: 176px; height: 176px; margin: 0 auto; border-radius: 34px; background: #f1f1f3; overflow: hidden; display: grid; place-items: center; }
+.rl-win::before, .rl-win::after { content: ""; position: absolute; left: 0; right: 0; height: 26px; z-index: 1; pointer-events: none; }
+.rl-win::before { top: 0; background: linear-gradient(#f1f1f3, transparent); }
+.rl-win::after { bottom: 0; background: linear-gradient(transparent, #f1f1f3); }
+.rl-art { width: 132px; height: 132px; display: grid; place-items: center; }
+.rl-art svg { width: 100%; height: 100%; }
+.rl-art.tick { animation: rlTick .09s ease-out; }
+.rl-art.land { animation: rlLand .6s cubic-bezier(.2, 1.7, .4, 1); }
+.rl-win.won { animation: rlGlow .9s ease-out; }
+.rl-name { font-size: 28px; font-weight: 800; letter-spacing: -0.6px; min-height: 1.3em; }
+.rl-name.land { animation: rlLand .6s cubic-bezier(.2, 1.7, .4, 1); }
+.rl-sub { margin: 0; font-size: 13px; color: var(--muted); min-height: 1.5em; }
+.rl-burst { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.rl-burst i { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 2px; background: var(--c); animation: rlBurst .8s ease-out forwards; }
+@keyframes rlTick { from { transform: translateY(-42%); filter: blur(2px); opacity: .55; } }
+@keyframes rlLand { 0% { transform: scale(.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes rlGlow { 0% { box-shadow: 0 0 0 0 rgb(0 0 0 / .5); } 100% { box-shadow: 0 0 0 18px rgb(0 0 0 / 0); } }
+@keyframes rlBurst { to { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
+@media (prefers-color-scheme: dark) { .rl-card { background: #1b1b1e; } }
 .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -6px; }
 .duo .go { padding-block: 13px; }
 .go-hint { margin: -10px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
@@ -367,6 +389,15 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   <a class="btn" id="dReviews" target="_blank" rel="noopener"><svg class="i"><use href="#i-msg"/></svg>사진·리뷰</a>
   <a class="btn solid" id="dGo" target="_blank" rel="noopener"><svg class="i"><use href="#i-nav"/></svg><span id="dGoLbl">길찾기</span></a>
 </div></div>
+
+<div class="roulette" id="roulette" hidden role="dialog" aria-modal="true" aria-labelledby="rlName">
+  <div class="rl-card">
+    <p class="rl-top">오늘 뭐 먹지?</p>
+    <div class="rl-win" id="rlWin"><div class="rl-art" id="rlArt"></div></div>
+    <div class="rl-name" id="rlName" aria-live="polite"></div>
+    <p class="rl-sub" id="rlSub"></p>
+  </div>
+</div>
 
 <dialog id="profile">
   <form method="dialog" id="profileForm">
@@ -1048,25 +1079,64 @@ $("bestBtn").addEventListener("click", async () => {
   btn.disabled = false; $("bestLbl").textContent = "추천맛집";
 });
 
-// Random pick: choose a food at random, search it, and show its best place.
-// If that food has nothing nearby, quietly try another (up to 4 foods).
+// Random pick as a roulette: food icons flip fast, slow down and land on one, then that food is searched.
+// If the landed food has nothing nearby, it spins again (up to 4 foods in total).
 let randomLabel = "";
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch {} };
+function showFood(f, cls) {
+  const art = $("rlArt"), name = $("rlName");
+  art.innerHTML = iconSvg(f.id); name.textContent = f.ko;
+  [art, name].forEach(n => { n.classList.remove("tick", "land"); void n.offsetWidth; if (cls) n.classList.add(cls); });
+}
+function burst() {
+  const box = el("div", "rl-burst"), colors = ["#ff8a5b", "#ffc533", "#7cb342", "#3fa9f5", "#e5483d", "#a64d79"];
+  for (let i = 0; i < 18; i++) {
+    const d = el("i"), a = (i / 18) * Math.PI * 2, r = 70 + Math.random() * 30;
+    d.style.cssText = "--c:" + colors[i % colors.length] + ";--x:" + Math.cos(a) * r + "px;--y:" + Math.sin(a) * r + "px;--r:" + (Math.random() * 360) + "deg";
+    box.append(d);
+  }
+  $("rlWin").append(box); setTimeout(() => box.remove(), 900);
+}
+async function spinTo(target) {
+  // ~26 flips; each gap grows (ease-out) so it feels like a wheel slowing down
+  const steps = reduceMotion ? 6 : 26;
+  let prev = null;
+  for (let i = 0; i < steps; i++) {
+    let f; do { f = FOODS[Math.floor(Math.random() * FOODS.length)]; } while (f === prev || f.id === target.id);
+    prev = f; showFood(f, "tick"); buzz(4);
+    const t = i / steps;
+    await sleep(reduceMotion ? 120 : 38 + Math.pow(t, 3) * 300);
+  }
+  showFood(target, "land"); buzz([18, 40, 28]);
+  $("rlWin").classList.remove("won"); void $("rlWin").offsetWidth; $("rlWin").classList.add("won");
+  if (!reduceMotion) burst();
+  await sleep(700);
+}
 $("randBtn").addEventListener("click", async () => {
   const btn = $("randBtn"); if (btn.disabled) return;
   btn.disabled = true;
   const last = store.get("lastRandom", null);
-  const pool = FOODS.map(f => f.id).filter(id => id !== last).sort(() => Math.random() - 0.5).slice(0, 4);
+  const pool = FOODS.filter(f => f.id !== last).sort(() => Math.random() - 0.5).slice(0, 4);
+  $("rlSub").textContent = ""; $("rlName").textContent = ""; $("rlArt").replaceChildren();
+  $("roulette").hidden = false;
   let found = 0;
   for (let i = 0; i < pool.length; i++) {
-    const f = FOODS.find(x => x.id === pool[i]);
+    const f = pool[i];
+    $("rlSub").textContent = i ? "근처에 없어서 다시 돌릴게요!" : "";
+    await spinTo(f);
+    $("rlSub").textContent = "‘" + f.ko + "’ 맛집 찾는 중…";
     S.foods = [f.id]; S.custom = ""; save(); renderControls();
     randomLabel = f.ko; searchMode = "food";
-    $("randLbl").textContent = f.ko + " 찾는 중…";
     found = await search({ quiet: i < pool.length - 1 });
     if (found) { store.set("lastRandom", f.id); break; }
+    if (found < 0) break;
+    await sleep(500);
   }
   if (found <= 0) randomLabel = "";
-  btn.disabled = false; $("randLbl").textContent = "랜덤음식";
+  $("roulette").hidden = true;
+  btn.disabled = false;
 });
 $("pickBtn").addEventListener("click", () => {
   const ranked = sortList(lastResults), okOnes = ranked.filter(p => !p.below);
