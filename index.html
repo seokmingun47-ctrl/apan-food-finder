@@ -172,6 +172,8 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; app
 @keyframes rlGlow { 0% { box-shadow: 0 0 0 0 rgb(0 0 0 / .5); } 100% { box-shadow: 0 0 0 18px rgb(0 0 0 / 0); } }
 @keyframes rlBurst { to { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
 @media (prefers-color-scheme: dark) { .rl-card { background: #1b1b1e; } }
+.range { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: -8px; }
+.range .chip { justify-content: center; padding-inline: 4px; }
 .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -6px; }
 .duo .go { padding-block: 13px; }
 .go-hint { margin: -10px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
@@ -298,7 +300,8 @@ dialog .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
   </section>
 
   <button class="btn solid go" id="searchBtn" type="button"><svg class="i"><use href="#i-search"/></svg><span id="searchLbl">검색하기</span></button>
-  <p class="go-hint">현재 위치에서 도보 30분 이내 가게만 찾아요</p>
+  <div class="range" id="rangeChips" role="group" aria-label="검색 거리"></div>
+  <p class="go-hint" id="goHint">현재 위치에서 도보 30분 이내 가게만 찾아요</p>
 
   <div class="duo">
     <button class="btn go" id="randBtn" type="button"><svg class="i"><use href="#i-dice"/></svg><span id="randLbl">랜덤음식</span></button>
@@ -560,8 +563,12 @@ const store = {
   set(k, v) { try { localStorage.setItem("jff." + k, JSON.stringify(v)); } catch {} },
 };
 const MIN_CHOICES = 10;   // show at least this many places when the area has them
-const WALK_MIN = 30, WALK_M_PER_MIN = 80, RADIUS = WALK_MIN * WALK_M_PER_MIN;   // max 30 minutes on foot ≈ 2.4km
-const DEFAULTS = { foods: ["sushi"], custom: "", radius: 1000, minRating: 3.8, minReviews: 30, prices: [], openNow: true, view: "none", viewStrict: false, sort: "best" };
+// Search range picked as walking time (80m per minute): 10min ≈ 800m … 3h ≈ 14.4km
+const WALK_OPTIONS = [{ min: 10, ko: "10분" }, { min: 30, ko: "30분" }, { min: 60, ko: "1시간" }, { min: 180, ko: "3시간" }];
+const WALK_M_PER_MIN = 80, TRANSIT_FROM_M = 2400;   // beyond a 30-minute walk, directions use public transit
+const walkLimit = () => (WALK_OPTIONS.some(o => o.min === S.walk) ? S.walk : 30);
+const radius = () => walkLimit() * WALK_M_PER_MIN;
+const DEFAULTS = { walk: 30, foods: ["sushi"], custom: "", radius: 1000, minRating: 3.8, minReviews: 30, prices: [], openNow: true, view: "none", viewStrict: false, sort: "best" };
 let S = Object.assign({}, DEFAULTS, store.get("settings", {}));
 S.foods = S.foods.filter(id => FOODS.some(f => f.id === id));
 S.view = "none"; S.viewStrict = false;   // view filter was removed from the UI
@@ -604,6 +611,13 @@ function renderControls() {
   });
   renderHeading();
   $("customFood").value = S.custom;
+  const rc = $("rangeChips"); rc.replaceChildren();
+  WALK_OPTIONS.forEach(o => rc.append(chip("도보 " + o.ko, walkLimit() === o.min, () => {
+    S.walk = o.min; save(); renderControls();
+    if (lastResults.length) search();
+  })));
+  const km = radius() / 1000;
+  $("goHint").textContent = "현재 위치에서 도보 " + fmtMin(walkLimit()) + " (약 " + (km < 1 ? Math.round(km * 1000) + "m" : km.toFixed(km < 10 ? 1 : 0) + "km") + ") 이내 가게를 찾아요";
   $("minRating").value = S.minRating; $("minReviews").value = S.minReviews;
   $("openNow").checked = S.openNow;
   $("minRatingOut").textContent = S.minRating > 0 ? "★ " + Number(S.minRating).toFixed(1) + " 이상" : "상관없음";
@@ -716,7 +730,9 @@ document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () =>
 
 // ---------- helpers ----------
 function fmtDist(m) { return m < 1000 ? Math.round(m) + "m" : (m / 1000).toFixed(m < 10000 ? 1 : 0) + "km"; }
-const walkMin = (m) => Math.max(1, Math.round(m / 80));
+const walkMin = (m) => Math.max(1, Math.round(m / WALK_M_PER_MIN));
+const fmtMin = (min) => min < 60 ? min + "분" : Math.floor(min / 60) + "시간" + (min % 60 ? " " + (min % 60) + "분" : "");
+const fmtWalk = (m) => fmtMin(walkMin(m));
 function haversine(a, b) {
   const R = 6371000, toR = Math.PI / 180;
   const dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
@@ -878,11 +894,11 @@ function dirUrl(p) {
   const name = String(p.name || "목적지").replace(/^\(예시\)\s*/, "").replace(/[,/]/g, " ");
   if (isKorea(p)) {
     const to = encodeURIComponent(name) + "," + p.lat + "," + p.lng;
-    return here ? "https://map.kakao.com/link/by/walk/" + encodeURIComponent("내 위치") + "," + here.lat + "," + here.lng + "/" + to
+    return here ? "https://map.kakao.com/link/by/" + (p.dist > TRANSIT_FROM_M ? "traffic" : "walk") + "/" + encodeURIComponent("내 위치") + "," + here.lat + "," + here.lng + "/" + to
                 : "https://map.kakao.com/link/to/" + to;
   }
   const real = !String(p.id).startsWith("demo");
-  let u = "https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + (real ? encodeURIComponent(name) + "&destination_place_id=" + encodeURIComponent(p.id) : p.lat + "," + p.lng);
+  let u = "https://www.google.com/maps/dir/?api=1&travelmode=" + (p.dist > TRANSIT_FROM_M ? "transit" : "walking") + "&destination=" + (real ? encodeURIComponent(name) + "&destination_place_id=" + encodeURIComponent(p.id) : p.lat + "," + p.lng);
   if (here) u += "&origin=" + here.lat + "," + here.lng;
   return u;
 }
@@ -997,7 +1013,7 @@ function scorePlace(p) {
   // Bayesian rating: pulls places with few reviews toward the average so a 5.0 with 3 reviews doesn't win
   const m = 60, C = 3.5, v = p.reviews || 0, R = p.rating || 0;
   const bayes = (v * R + m * C) / (v + m);
-  const distFactor = 1 - 0.35 * Math.min(1, p.dist / RADIUS);
+  const distFactor = 1 - 0.35 * Math.min(1, p.dist / radius());
   const viewBonus = S.view !== "none" ? 0.4 * Math.min(p.viewScore, 3) : 0;
   const matchBonus = p.rel === 2 ? 0.6 : 0;   // a clear ramen shop beats a generic restaurant from the same search
   return bayes * distFactor + viewBonus + matchBonus;
@@ -1015,11 +1031,11 @@ async function fetchGoogle(queries) {
   const { Place } = await loadGoogle(apiKey);
   const fields = ["id", "displayName", "location", "rating", "userRatingCount", "priceLevel", "formattedAddress", "googleMapsURI", "photos", "regularOpeningHours", "utcOffsetMinutes", "businessStatus", "primaryTypeDisplayName", "types"];
   if (S.view !== "none") fields.push("reviews");
-  const bounds = boundsFor(here, RADIUS);
+  const bounds = boundsFor(here, radius());
   const errors = [];
   const region = isKorea(here) ? "kr" : "jp", near = S.sort === "near";
   const run = (qq) => qq.kind === "nearby"
-    ? Place.searchNearby({ fields, locationRestriction: { center: { lat: here.lat, lng: here.lng }, radius: RADIUS }, includedTypes: qq.types, maxResultCount: 20, rankPreference: near ? "DISTANCE" : "POPULARITY", language: "ko", region })
+    ? Place.searchNearby({ fields, locationRestriction: { center: { lat: here.lat, lng: here.lng }, radius: radius() }, includedTypes: qq.types, maxResultCount: 20, rankPreference: near ? "DISTANCE" : "POPULARITY", language: "ko", region })
     : Place.searchByText({ textQuery: qq.q, fields, locationRestriction: bounds, maxResultCount: 20, language: "ko", region, rankPreference: near ? "DISTANCE" : "RELEVANCE", ...(S.openNow ? { isOpenNow: true } : {}) });
   const batches = await Promise.all(queries.map(qq => Promise.resolve().then(() => run(qq))
     .then(r => r.places.map(p => ({ p, foodId: qq.foodId })))
@@ -1100,7 +1116,7 @@ async function search(opts = {}) {
   try {
     const raw = demo ? demoData() : await fetchGoogle(buildQueries());
     raw.forEach(p => Object.assign(p, { dist: haversine(here, p), viewScore: 0, viewQuote: "", below: false }));
-    const nearby = raw.filter(p => p.dist <= RADIUS);
+    const nearby = raw.filter(p => p.dist <= radius());
     const usable = nearby.filter(p => (!S.prices.length || !p.price || S.prices.includes(p.price)) && (!S.openNow || p.open !== false));
     usable.forEach(p => p.score = scorePlace(p));
     const good = usable.filter(p => (p.rating || 0) >= S.minRating && p.reviews >= S.minReviews);
@@ -1113,7 +1129,7 @@ async function search(opts = {}) {
       if (opts.quiet) return 0;
       const e = $("emptyHint");
       e.textContent = nearby.length
-        ? "도보 " + WALK_MIN + "분 안에 " + nearby.length + "곳이 있지만 지금 영업 중이 아니거나 가격대 조건에 맞지 않아요."
+        ? "도보 " + fmtMin(walkLimit()) + " 안에 " + nearby.length + "곳이 있지만 지금 영업 중이 아니거나 가격대 조건에 맞지 않아요."
         : "주위에 관련 음식점이 없습니다.";
       e.hidden = false;
       e.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1142,7 +1158,7 @@ function listItem(p, rank, photoMode = "lazy") {
   if (p.below) mid.append(el("span", "vw", p.reviews < S.minReviews ? "리뷰 적음 · 기준 미달" : "별점 기준 미달"));
   if (S.view !== "none" && p.viewScore > 0) mid.append(el("span", "vw", VIEWS.find(v => v.id === S.view).ko + " 언급 " + p.viewScore + "회"));
   const rt = el("span", "rt"); const [ot, oc] = openText(p);
-  rt.append(el("span", oc, ot || "도보 " + walkMin(p.dist) + "분"), icon("chev", 16));
+  rt.append(el("span", oc, ot || "도보 " + fmtWalk(p.dist)), icon("chev", 16));
   b.append(th, mid, rt);
   b.addEventListener("click", () => openDetail(p));
   return b;
@@ -1157,7 +1173,7 @@ function renderResults() {
   const f = $("feature"); f.replaceChildren();
   const card = el("button", "feature"); card.type = "button";
   const ph = el("div", "ph"); fillImg(ph, lead);
-  ph.append(el("span", "tag", pickedId ? "오늘은 여기" : searchMode === "best" ? "추천 맛집" : randomLabel ? "랜덤 · " + randomLabel : "도보 " + walkMin(lead.dist) + "분"));
+  ph.append(el("span", "tag", pickedId ? "오늘은 여기" : searchMode === "best" ? "추천 맛집" : randomLabel ? "랜덤 · " + randomLabel : "도보 " + fmtWalk(lead.dist)));
   const body = el("div", "body");
   const title = el("div", "title"); title.append(el("span", null, lead.name), icon("chev"));
   body.append(title, el("div", "sub", (lead.type ? lead.type + " · " : "") + (lead.address || "")));
@@ -1291,7 +1307,7 @@ function openDetail(p) {
   const [ot, oc] = openText(p);
   const o = $("dOpen"); o.className = oc; o.textContent = ot;
   const strip = $("dStrip"); strip.replaceChildren();
-  [["star", p.rating ? p.rating.toFixed(1) : "-"], ["msg", p.reviews.toLocaleString()], ["walk", walkMin(p.dist) + "분"]].forEach(([ic, t]) => { const s = el("span"); s.append(icon(ic, 16), document.createTextNode(t)); strip.append(s); });
+  [["star", p.rating ? p.rating.toFixed(1) : "-"], ["msg", p.reviews.toLocaleString()], ["walk", fmtWalk(p.dist)]].forEach(([ic, t]) => { const s = el("span"); s.append(icon(ic, 16), document.createTextNode(t)); strip.append(s); });
   const v = $("dView");
   if (S.view !== "none" && p.viewScore > 0) { v.hidden = false; v.textContent = VIEWS.find(x => x.id === S.view).ko + " 관련 언급 " + p.viewScore + "회" + (p.viewQuote ? " — “…" + p.viewQuote + "…”" : ""); }
   else v.hidden = true;
@@ -1299,7 +1315,7 @@ function openDetail(p) {
   const maps = p.mapsUrl || "https://www.google.com/maps/search/?api=1&query=" + p.lat + "," + p.lng;
   $("dMapsLink").href = maps; $("dReviews").href = maps;
   $("dGo").href = dirUrl(p);
-  $("dGoLbl").textContent = isKorea(p) ? "길찾기 (카카오맵)" : "길찾기";
+  $("dGoLbl").textContent = "길찾기" + (p.dist > TRANSIT_FROM_M ? " · 대중교통" : "") + (isKorea(p) ? " (카카오맵)" : "");
   const h = $("dHours"); h.replaceChildren();
   if (p.hours && p.hours.length) {
     const today = (new Date().getDay() + 6) % 7;
